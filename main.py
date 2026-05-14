@@ -1,10 +1,21 @@
+import httpx
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
+load_dotenv()
+
 # 1. Initialize the App
 app = FastAPI(title="PhishGuard Analysis Engine")
 
+GOOGLE_KEY = os.getenv("GOOGLE_API_KEY")
+VT_KEY = os.getenv("VT_API_KEY")
+
+@app.get("/test-keys")
+async def test_keys():
+    return {"google_loaded": bool(GOOGLE_KEY), "vt_loaded": bool(VT_KEY)}
 
 # 2. Define the Request Schema
 class AnalysisRequest(BaseModel):
