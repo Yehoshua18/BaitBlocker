@@ -96,8 +96,8 @@ async def analyze_input(request: AnalysisRequest):
     results = {
         "status": "received",
         "input_received": request.url or "Text Block",
-        "risk_level": risk_level, #risk based on VT
-        "engines_flagged": vt_results.get("total_risk"), #to know why the risk is high
+        "risk_level_from_virus_total": risk_level, #risk based on VT
+        "engines_flagged_on_vt": vt_results.get("total_risk"), #to know why the risk is high
         "google_safe_browsing": "Malicious" if is_malicious else "Clean", #if google finds the URL malicious
         "recommendation": "Pending analysis"
     }
