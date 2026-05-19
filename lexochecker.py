@@ -1,6 +1,7 @@
 import math
 from urllib.parse import urlparse
 import ipaddress
+from matcher import KeywordScanner
 
 # Suspicious keywords often crammed into paths/subdomains to fool users
 SUSPICIOUS_KEYWORDS = {
@@ -11,6 +12,7 @@ SUSPICIOUS_KEYWORDS = {
 # High-risk top level domains frequently used in malicious infrastructure
 HIGH_RISK_TLDS = {".xyz", ".top", ".club", ".work", ".live", ".gq", ".tk", ".cf"}
 
+keyword_scanner = KeywordScanner()
 
 def calculate_entropy(string: str) -> float:
     """
@@ -57,6 +59,11 @@ def assess_url_risk(url: str) -> dict:
     # Count special characters in the domain (excluding standard dots)
     hyphen_count = hostname.count("-")
     digit_count = sum(c.isdigit() for c in hostname)
+    subdomain_count = len(hostname.split(".")) - 2
+
+    if subdomain_count >= 3:
+        risk_score += 0.2
+        reasons.append(f"Suspicious sub-segmenting detected ({subdomain_count} routing layers)")
 
     if hyphen_count > 2:
         risk_score += 0.2
@@ -66,12 +73,18 @@ def assess_url_risk(url: str) -> dict:
         reasons.append(f"High density of numbers in domain ({digit_count})")
 
     # 3. Keyword Squatting (Brand names or bait words in paths/subdomains)
+    db_scan_results = keyword_scanner.scan_url(url)
+    if db_scan_results["matches"]:
+        risk_score += 0.25 * len(db_scan_results["matches"])
+        reasons.append(f"Blacklisted keywords found: {db_scan_results['matches']}")
+    '''
     found_keywords = [word for word in SUSPICIOUS_KEYWORDS if word in url]
     # Check if they are trying to trick the user (e.g., 'paypal' is present but it's not the actual brand domain)
     if found_keywords:
         # Simple safeguard: if the brand is inside the string but doesn't map to the core domain
         risk_score += 0.25 * len(found_keywords)
         reasons.append(f"Suspicious keywords detected: {found_keywords}")
+'''
 
     # 4. TLD Risk Assessment
     if any(hostname.endswith(tld) for tld in HIGH_RISK_TLDS):

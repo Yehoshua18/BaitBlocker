@@ -1,5 +1,5 @@
 import base64
-
+import uvicorn
 import httpx
 import os
 from dotenv import load_dotenv
@@ -7,7 +7,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from fastapi.responses import RedirectResponse
-from lexochecker import assess_url_risk
+
+from database import init_db, add_single_keyword, add_bulk_keywords, get_all_keywords
+from lexochecker import assess_url_risk, keyword_scanner
 
 #load keys from .env
 load_dotenv()
@@ -151,6 +153,30 @@ async def analyze_input(phish: AnalysisRequest):
 
 
 if __name__ == "__main__":
-    import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    #uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # 1. Ensure the DB file and initial seed data exist first
+    init_db()
+
+    # 2. Add a single targeted keyword
+    was_added = add_single_keyword("netflix", "brand", 0.85)
+    if was_added:
+        print("Successfully added netflix!")
+    else:
+        print("Netflix keyword already exists in database, skipped.")
+
+    # 3. Add a massive list using bulk executemany processing
+    fresh_intel_dump = [
+        ("paypal", "brand", 0.90),
+        ("account-suspended", "urgency", 0.70),
+        ("login", "infrastructure", 0.50)  # Duplicate test case: will be safely ignored
+    ]
+
+    add_bulk_keywords(fresh_intel_dump)
+
+    # 4. Verify your dataset growth
+    current_keywords = get_all_keywords()
+    print(f"\nTotal keywords currently loaded: {len(current_keywords)}")
+    print("Database Contents:", current_keywords)
+    keyword_scanner.refresh_cache()

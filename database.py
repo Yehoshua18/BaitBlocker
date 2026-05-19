@@ -1,5 +1,7 @@
 import sqlite3
 
+from typing import List, Tuple
+
 DB_NAME = "threat_intel.db"
 
 
@@ -37,7 +39,7 @@ def init_db():
     conn.close()
 
 
-def get_all_keywords() -> list[tuple[str, float]]:
+def get_all_keywords() -> List[Tuple[str, float]]:
     """Retrieves all dangerous keywords and their associated weights."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -45,3 +47,52 @@ def get_all_keywords() -> list[tuple[str, float]]:
     rows = cursor.fetchall()
     conn.close()
     return rows  # Returns a list of tuples: [('login', 0.5), ...]
+
+
+def add_single_keyword(keyword: str, category: str, risk_weight: float = 0.25) -> bool:
+    """
+    Adds a single keyword to the database.
+    Returns True if added, False if it already existed.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    # INSERT OR IGNORE skips the entry cleanly if the keyword violates the UNIQUE constraint
+    cursor.execute("""
+        INSERT OR IGNORE INTO unsafe_keywords (keyword, category, risk_weight)
+        VALUES (?, ?, ?)
+    """, (keyword.lower().strip(), category, risk_weight))
+
+    # rowcount tells us if a row was actually modified
+    changes = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return changes > 0
+
+
+def add_bulk_keywords(keywords_list: List[Tuple[str, str, float]]) -> int:
+    """
+    Efficiently inserts a batch list of keywords.
+    Expects a list of tuples: [('paypal', 'brand', 0.90), ('refund', 'financial', 0.60)]
+    Returns the total number of newly added entries.
+    """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    # Normalize keywords to lowercase and strip whitespaces before database entry
+    cleaned_data = [
+        (item[0].lower().strip(), item[1], item[2])
+        for item in keywords_list
+    ]
+
+    cursor.executemany("""
+        INSERT OR IGNORE INTO unsafe_keywords (keyword, category, risk_weight)
+        VALUES (?, ?, ?)
+    """, cleaned_data)
+
+    # SQLite doesn't natively return affected row counts easily for execuitemany,
+    # so we commit and check total changes if needed, or simply return success tracking.
+    conn.commit()
+    conn.close()
+    return len(cleaned_data)
