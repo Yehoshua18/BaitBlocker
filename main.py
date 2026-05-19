@@ -1,3 +1,5 @@
+import base64
+
 import httpx
 import os
 from dotenv import load_dotenv
@@ -11,7 +13,17 @@ from lexochecker import assess_url_risk
 load_dotenv()
 
 #Initialize the App
-app = FastAPI(title="BaitBlocker Analysis Engine")
+app = FastAPI(
+    title="BaitBlocker Analysis Engine",
+    description="Lexicographical & External Threat Intelligence Engine",
+    version="1.0.0",
+    # Pass a dictionary of Swagger UI configuration parameters
+    swagger_ui_parameters={
+        "defaultModelsExpandDepth": -1,  # Hides the ugly "Schemas" section at the bottom
+        "deepLinking": True,
+        "displayRequestDuration": True,  # Shows how fast your endpoints run in milliseconds
+        "docExpansion": "list"           # Keeps endpoints cleanly listed but closed by default
+    })
 
 #We'll be using 2 databases - Google Safe and VirusTotal
 GOOGLE_KEY = os.getenv("GOOGLE_API_KEY")
@@ -46,36 +58,49 @@ async def check_google_safe_browsing(url: str):
 
 
 async def check_virustotal(url: str):
-    # VirusTotal API v3 requires the URL to be sent as a data-form or via a specific endpoint
-    api_url = "https://www.virustotal.com/api/v3/urls"
+    # 1. Clean the string and encode to standard Base64
+    url_bytes = url.strip().encode("utf-8")
+
+    # urlsafe encoding ensures '+' and '/' are safe for the URL path
+    base64_encoded = base64.urlsafe_b64encode(url_bytes).decode("utf-8")
+
+    # CRITICAL: VirusTotal requires you to completely strip any trailing '=' padding
+    url_id = base64_encoded.rstrip("=")
+
+    # 2. Query the URL repository directly via GET
+    api_url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
     headers = {
+        "accept": "application/json",
         "x-apikey": VT_KEY
     }
-    data = {"url": url}
 
     async with httpx.AsyncClient() as client:
-        # Step 1: Submit the URL for analysis
-        response = await client.post(api_url, headers=headers, data=data)
+        response = await client.get(api_url, headers=headers)
+        print("VT STATUS CODE:", response.status_code)
+        print("RAW DATA SAMPLE:", response.text[:500])  # Look at the first 500 characters
 
         if response.status_code == 401:
             return {"error": "Invalid VT API Key"}
 
+        # 404 means the URL has never been submitted to VirusTotal by anyone before
+        if response.status_code == 404:
+            return {"malicious": 0, "suspicious": 0, "total_risk": 0, "note": "Clean / Unscanned URL"}
+
         if response.status_code != 200:
             return {"error": "VT API Error", "details": response.text}
 
-        # Step 2: Extract the analysis results
-        # VT returns a summary of how many engines flagged the URL
         result_data = response.json()
+
+        # 3. Pull from the persistent analysis matrix
         stats = result_data.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
 
-        # We look for 'malicious' or 'phishing' flags
         malicious_count = stats.get("malicious", 0)
-        phishing_count = stats.get("phishing", 0)
+        suspicious_count = stats.get("suspicious", 0)
 
         return {
             "malicious": malicious_count,
-            "phishing": phishing_count,
-            "total_risk": malicious_count + phishing_count
+            "suspicious": suspicious_count,
+            "total_risk": malicious_count + suspicious_count
         }
 
 # This route listens to the main root page '/'

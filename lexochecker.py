@@ -113,18 +113,3 @@ def assess_url_risk(url: str) -> dict:
         "risk_score": final_score,
         "reasons": reasons
     }
-
-
-# --- Quick Test ---
-if __name__ == "__main__":
-    test_urls = [
-        "https://www.google.com/search?q=python",
-        "http://secure-login-paypal-update-account.xyz/index.php",
-        "http://192.168.1.1/login",
-        "https://amzn-security-verification-check.com"
-    ]
-
-    for t_url in test_urls:
-        res = assess_url_risk(t_url)
-        print(
-            f"URL: {res['url']}\nVerdict: {res['verdict']} ({res['risk_score']})\nReasons: {res['reasons']}\n{'-' * 40}")
