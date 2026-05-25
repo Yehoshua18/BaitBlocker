@@ -48,6 +48,14 @@ def get_all_keywords() -> List[Tuple[str, float]]:
     conn.close()
     return rows  # Returns a list of tuples: [('login', 0.5), ...]
 
+def get_brands() -> List[str]:
+    """Retrieves all dangerous brand names."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT keyword FROM unsafe_keywords WHERE category = 'brand'")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
 
 def add_single_keyword(keyword: str, category: str, risk_weight: float = 0.25) -> bool:
     """

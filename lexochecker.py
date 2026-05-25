@@ -1,6 +1,10 @@
 import math
+from typing import List
 from urllib.parse import urlparse
 import ipaddress
+from database import get_brands
+from rapidfuzz.distance import Levenshtein
+
 from matcher import KeywordScanner
 
 # Suspicious keywords often crammed into paths/subdomains to fool users
@@ -9,10 +13,10 @@ SUSPICIOUS_KEYWORDS = {
     "account", "wallet", "paypal", "netflix", "amazon", "apple"
 }
 
+keyword_scanner = KeywordScanner()
+
 # High-risk top level domains frequently used in malicious infrastructure
 HIGH_RISK_TLDS = {".xyz", ".top", ".club", ".work", ".live", ".gq", ".tk", ".cf"}
-
-keyword_scanner = KeywordScanner()
 
 def calculate_entropy(string: str) -> float:
     """
@@ -25,7 +29,38 @@ def calculate_entropy(string: str) -> float:
     return -sum(p * math.log2(p) for p in probabilities) #the formula to calculate shannon's entropy
 
 
-def assess_url_risk(url: str) -> dict:
+def detect_mutations(input_domain: str, known_brands: List[str]) -> List[dict]:
+    """
+    Compares the input against trusted brands using Levenshtein distance.
+    Filters out exact matches and flags close mutations.
+    """
+    detected = []
+    input_clean = input_domain.lower().strip()
+
+    for brand in known_brands:
+        brand_clean = brand.lower().strip()
+
+        # Exact match means they are visiting the legitimate domain
+        if input_clean == brand_clean:
+            continue
+
+        # Calculate how many single-character edits separate the strings
+        distance = Levenshtein.distance(input_clean, brand_clean)
+
+        # An edit distance of 1 or 2 characters indicates a severe typosquatting risk
+        if 0 < distance <= 2:
+            # Simple confidence inverse calculation for metric output
+            confidence = 100.0 if distance == 1 else 75.0
+
+            detected.append({
+                "impersonated_brand": brand,
+                "edit_distance": distance,
+                "confidence_score": confidence
+            })
+
+    return detected
+
+async def assess_url_risk(url: str) -> dict:
     """
     Lexicographically evaluates a URL and returns a risk score profile.
     """
@@ -84,14 +119,27 @@ def assess_url_risk(url: str) -> dict:
         # Simple safeguard: if the brand is inside the string but doesn't map to the core domain
         risk_score += 0.25 * len(found_keywords)
         reasons.append(f"Suspicious keywords detected: {found_keywords}")
-'''
+    '''
 
-    # 4. TLD Risk Assessment
+    # 4. Typosquatting (similar to existing brand names)
+
+    # Fallback/Safety valve if your database table is empty during testing
+    brands = get_brands()
+    if not brands:
+        brands = ["google", "paypal", "microsoft", "netflix"]
+
+    # 4.2. Run the algorithmic distance evaluation
+    matches = detect_mutations(url, brands)
+    if len(matches) > 0:
+        risk_score += 0.3 * len(matches)
+        reasons.append(f"Suspicious mutation detected: {matches}")
+
+    # 5. TLD Risk Assessment
     if any(hostname.endswith(tld) for tld in HIGH_RISK_TLDS):
         risk_score += 0.3
         reasons.append("Uses a statistically high-risk top-level domain (TLD)")
 
-    # 5. IP Address Check (Direct IP URLs are overwhelmingly malicious/scams)
+    # 6. IP Address Check (Direct IP URLs are overwhelmingly malicious/scams)
     # We strip brackets [] because urlparse preserves them around IPv6 hostnames
     clean_host = hostname.strip("[]")
     try:
@@ -103,7 +151,7 @@ def assess_url_risk(url: str) -> dict:
         # If a ValueError is thrown, it's a standard text domain (like google.com), so we move on safely
         pass
 
-    # 6. Entropy Check (Looks for randomly generated strings)
+    # 7. Entropy Check (Looks for randomly generated strings)
     entropy = calculate_entropy(hostname)
     if entropy > 4.2:  # 4.2+ is heavily random for typical commercial domain names
         risk_score += 0.2

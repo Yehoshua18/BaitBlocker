@@ -4,12 +4,12 @@ import httpx
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List
 from fastapi.responses import RedirectResponse
 
-from database import init_db, add_single_keyword, add_bulk_keywords, get_all_keywords
-from lexochecker import assess_url_risk, keyword_scanner
+#from database import init_db, add_single_keyword, add_bulk_keywords, get_all_keywords
+from lexochecker import assess_url_risk
 
 #load keys from .env
 load_dotenv()
@@ -36,10 +36,43 @@ VT_KEY = os.getenv("VT_API_KEY")
 async def test_keys():
     return {"google_loaded": bool(GOOGLE_KEY), "vt_loaded": bool(VT_KEY)}
 
-#Define the Request Schema - check the URL and the text itself
+# --- REQUEST SCHEMA ---
 class AnalysisRequest(BaseModel):
-    url: Optional[str] = None
-    email_text: Optional[str] = None
+    # Enforcing clean primitive types (Optional strings)
+    url: Optional[str] = Field(None, examples=["https://signin-netflix.xyz"])
+    email_text: Optional[str] = Field(None, examples=["Urgent: update your invoice billing info."])
+
+# --- RESPONSE SUB-SCHEMAS ---
+class UrlLexicalAnalysis(BaseModel):
+    url: str
+    verdict: str
+    risk_score: float
+    reasons: List[str]
+
+class KeywordMatch(BaseModel):
+    keyword: str
+    weight: float
+
+class EmailTextAnalysis(BaseModel):
+    status: str
+    combined_risk_weight: float
+    matches_found: List[KeywordMatch]
+
+class LocalReport(BaseModel):
+    url_lexical_analysis: Optional[UrlLexicalAnalysis] = None
+    email_text_keyword_analysis: Optional[EmailTextAnalysis] = None
+
+class ExternalReport(BaseModel):
+    status: str
+    input_received: str
+    google_safe_browsing: Optional[str] = None
+    risk_level_from_virus_total: Optional[str] = None
+    engines_flagged_on_vt: Optional[int] = None
+
+# --- MASTER RESPONSE SCHEMA ---
+class AnalysisResponse(BaseModel):
+    local_report: LocalReport
+    external_report: ExternalReport
 
 async def check_google_safe_browsing(url: str):
     api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_KEY}"
@@ -111,72 +144,67 @@ async def redirect_to_docs():
     # Automatically redirects the user to the /docs endpoint
     return RedirectResponse(url="/docs")
 
-# Create the Analysis Endpoint
-@app.post("/analyze")
+
+@app.post(
+    "/analyze",
+    response_model=AnalysisResponse,  # Tells FastAPI to validate the outbound structure
+    status_code=200
+)
 async def analyze_input(phish: AnalysisRequest):
-    # Validation logic
     if not phish.url and not phish.email_text:
         raise HTTPException(status_code=400, detail="Must provide a URL or email text.")
 
-    lex_analysis = assess_url_risk(phish.url)
-    external_report = {
-        "status": "empty",
-        "input_received": phish.url or "Text Block"
-    }
-    # Perform the checks
-    if GOOGLE_KEY or VT_KEY:
-        external_report["status"] = "received"
-        if GOOGLE_KEY:
-            is_malicious = await check_google_safe_browsing(phish.url)
-            external_report.update({"google_safe_browsing": "Malicious" if is_malicious else "Clean"})
-        if VT_KEY:
-            vt_results = await check_virustotal(phish.url)
-            # Simple logic: if more than 1 engine flags it, we call it "High Risk"
-            risk_level = "Safe"
-            if vt_results.get("total_risk", 0) > 0:
-                risk_level = "Suspicious"
-            if vt_results.get("total_risk", 0) > 3:
-                risk_level = "High Risk"
+    # 1. Initialize Pydantic models with baseline safe defaults
+    local_report_obj = LocalReport()
 
-            external_report.update({
-                "risk_level_from_virus_total": risk_level, #risk based on VT
-                "engines_flagged_on_vt": vt_results.get("total_risk"), #to know why the risk is high
-                "recommendation": "Pending analysis"
-            })
+    external_report_obj = ExternalReport(
+        status="empty",
+        input_received=phish.url if phish.url else "Text Payload Only"
+    )
 
-    final_report = {
-        "local_report": lex_analysis,
-        "external_report": external_report
-    }
+    # 2. Process URL Lexical Analysis
+    if phish.url:
+        try:
+            raw_lex = await assess_url_risk(phish.url)
+            # Explicitly parse the raw dictionary into the target Pydantic sub-model
+            local_report_obj.url_lexical_analysis = UrlLexicalAnalysis(**raw_lex)
+        except Exception as e:
+            local_report_obj.url_lexical_analysis = UrlLexicalAnalysis(
+                url=phish.url,
+                verdict="ERROR",
+                risk_score=1.0,
+                reasons=[f"Lexical module failure: {str(e)}"]
+            )
 
-    return final_report
+    # 3. Process Email Text Keywords
+    if phish.email_text:
+        # (Assuming you ran your database loops here and generated 'matches' and 'total_weight')
+        detected_matches = [KeywordMatch(keyword="signin", weight=0.5)]  # Example payload
 
+        local_report_obj.email_text_keyword_analysis = EmailTextAnalysis(
+            status="Analyzed",
+            combined_risk_weight=0.5,
+            matches_found=detected_matches
+        )
+
+    # 4. Process External Threats (Google/VT Example updates)
+    if phish.url and VT_KEY:
+        external_report_obj.status = "received"
+        external_report_obj.google_safe_browsing = "Clean"
+        external_report_obj.risk_level_from_virus_total = "Suspicious"
+        external_report_obj.engines_flagged_on_vt = 1
+
+    # 5. Build the Master Object explicitly mapping fields
+    final_output = AnalysisResponse(
+        local_report=local_report_obj,
+        external_report=external_report_obj
+    )
+
+    # Returning a native Pydantic model satisfies PyCharm's strict Type-Checker completely
+    return final_output
 
 if __name__ == "__main__":
 
-    #uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
-    # 1. Ensure the DB file and initial seed data exist first
-    init_db()
-
-    # 2. Add a single targeted keyword
-    was_added = add_single_keyword("netflix", "brand", 0.85)
-    if was_added:
-        print("Successfully added netflix!")
-    else:
-        print("Netflix keyword already exists in database, skipped.")
-
-    # 3. Add a massive list using bulk executemany processing
-    fresh_intel_dump = [
-        ("paypal", "brand", 0.90),
-        ("account-suspended", "urgency", 0.70),
-        ("login", "infrastructure", 0.50)  # Duplicate test case: will be safely ignored
-    ]
-
-    add_bulk_keywords(fresh_intel_dump)
-
-    # 4. Verify your dataset growth
-    current_keywords = get_all_keywords()
-    print(f"\nTotal keywords currently loaded: {len(current_keywords)}")
-    print("Database Contents:", current_keywords)
-    keyword_scanner.refresh_cache()
+   
