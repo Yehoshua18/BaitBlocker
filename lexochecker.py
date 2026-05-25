@@ -129,7 +129,9 @@ async def assess_url_risk(url: str) -> dict:
         brands = ["google", "paypal", "microsoft", "netflix"]
 
     # 4.2. Run the algorithmic distance evaluation
-    matches = detect_mutations(url, brands)
+    # Extract just the core name label before the TLD dot (e.g., "g00gle.com" -> "g00gle")
+    clean_host_label = hostname.split(".")[0] if hostname else ""
+    matches = detect_mutations(clean_host_label, brands)
     if len(matches) > 0:
         risk_score += 0.3 * len(matches)
         reasons.append(f"Suspicious mutation detected: {matches}")
