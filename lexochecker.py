@@ -2,7 +2,7 @@ import math
 from typing import List
 from urllib.parse import urlparse
 import ipaddress
-from database import get_brands
+from database import get_by_type
 from rapidfuzz.distance import Levenshtein
 
 from matcher import KeywordScanner
@@ -124,7 +124,7 @@ async def assess_url_risk(url: str) -> dict:
     # 4. Typosquatting (similar to existing brand names)
 
     # Fallback/Safety valve if your database table is empty during testing
-    brands = get_brands()
+    brands = get_by_type("brand")
     if not brands:
         brands = ["google", "paypal", "microsoft", "netflix"]
 

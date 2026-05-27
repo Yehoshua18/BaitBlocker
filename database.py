@@ -48,11 +48,11 @@ def get_all_keywords() -> List[Tuple[str, float]]:
     conn.close()
     return rows  # Returns a list of tuples: [('login', 0.5), ...]
 
-def get_brands() -> List[str]:
+def get_by_type(type: str) -> List[str]:
     """Retrieves all dangerous brand names."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT keyword FROM unsafe_keywords WHERE category = 'brand'")
+    cursor.execute(f"SELECT keyword FROM unsafe_keywords WHERE category = '{type}'")
     rows = cursor.fetchall()
     conn.close()
     return [row[0] for row in rows]
