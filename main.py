@@ -1,15 +1,12 @@
-import base64
 import uvicorn
-import httpx
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from fastapi.responses import RedirectResponse
-
-#from database import init_db, add_single_keyword, add_bulk_keywords, get_all_keywords
 from lexochecker import assess_url_risk
+from interfaces import (check_google_safe_browsing, check_virustotal)
 
 #load keys from .env
 load_dotenv()
@@ -74,70 +71,6 @@ class AnalysisResponse(BaseModel):
     local_report: LocalReport
     external_report: ExternalReport
 
-async def check_google_safe_browsing(url: str):
-    api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={GOOGLE_KEY}"
-    payload = {
-        "client": {"clientId": "phishguard", "clientVersion": "1.0.0"},
-        "threatInfo": {
-            "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"],
-            "platformTypes": ["ANY_PLATFORM"],
-            "threatEntryTypes": ["URL"],
-            "threatEntries": [{"url": url}] #insert our URL into the safebrowsing API
-        }
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.post(api_url, json=payload)
-        data = response.json()
-        # If 'matches' exists in the response, the URL is malicious
-        return "matches" in data
-
-
-async def check_virustotal(url: str):
-    # 1. Clean the string and encode to standard Base64
-    url_bytes = url.strip().encode("utf-8")
-
-    # urlsafe encoding ensures '+' and '/' are safe for the URL path
-    base64_encoded = base64.urlsafe_b64encode(url_bytes).decode("utf-8")
-
-    # CRITICAL: VirusTotal requires you to completely strip any trailing '=' padding
-    url_id = base64_encoded.rstrip("=")
-
-    # 2. Query the URL repository directly via GET
-    api_url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
-    headers = {
-        "accept": "application/json",
-        "x-apikey": VT_KEY
-    }
-
-    async with httpx.AsyncClient() as client:
-        response = await client.get(api_url, headers=headers)
-        print("VT STATUS CODE:", response.status_code)
-        print("RAW DATA SAMPLE:", response.text[:500])  # Look at the first 500 characters
-
-        if response.status_code == 401:
-            return {"error": "Invalid VT API Key"}
-
-        # 404 means the URL has never been submitted to VirusTotal by anyone before
-        if response.status_code == 404:
-            return {"malicious": 0, "suspicious": 0, "total_risk": 0, "note": "Clean / Unscanned URL"}
-
-        if response.status_code != 200:
-            return {"error": "VT API Error", "details": response.text}
-
-        result_data = response.json()
-
-        # 3. Pull from the persistent analysis matrix
-        stats = result_data.get("data", {}).get("attributes", {}).get("last_analysis_stats", {})
-
-        malicious_count = stats.get("malicious", 0)
-        suspicious_count = stats.get("suspicious", 0)
-
-        return {
-            "malicious": malicious_count,
-            "suspicious": suspicious_count,
-            "total_risk": malicious_count + suspicious_count
-        }
-
 # This route listens to the main root page '/'
 @app.get("/", include_in_schema=False)
 async def redirect_to_docs():
@@ -176,7 +109,7 @@ async def analyze_input(phish: AnalysisRequest):
                 reasons=[f"Lexical module failure: {str(e)}"]
             )
 
-    # 3. Process Email Text Keywords
+    # 3. Process Email Text Keywords - TODO - use llm to read the email for suspicious wording
     if phish.email_text:
         # (Assuming you ran your database loops here and generated 'matches' and 'total_weight')
         detected_matches = [KeywordMatch(keyword="signin", weight=0.5)]  # Example payload
@@ -188,11 +121,25 @@ async def analyze_input(phish: AnalysisRequest):
         )
 
     # 4. Process External Threats (Google/VT Example updates)
-    if phish.url and VT_KEY:
+    if phish.url:
         external_report_obj.status = "received"
-        external_report_obj.google_safe_browsing = "Clean"
-        external_report_obj.risk_level_from_virus_total = "Suspicious"
-        external_report_obj.engines_flagged_on_vt = 1
+        if VT_KEY:
+            vt = await check_virustotal(phish.url, VT_KEY)
+
+            # Defensive check: if VT returned an error dict instead of stats, handle it gracefully
+            if "error" in vt:
+                external_report_obj.risk_level_from_virus_total = vt["error"]
+                external_report_obj.engines_flagged_on_vt = 0
+            else:
+                external_report_obj.risk_level_from_virus_total = "Suspicious" if vt["total_risk"] > 0 else "Clean"
+                external_report_obj.engines_flagged_on_vt = vt["total_risk"]
+
+        if GOOGLE_KEY:
+            google = await check_google_safe_browsing(phish.url, GOOGLE_KEY)
+
+            # If google is True, it means it found a match (Malicious)
+            external_report_obj.google_safe_browsing = "Malicious / Flagged" if google else "Clean"
+
 
     # 5. Build the Master Object explicitly mapping fields
     final_output = AnalysisResponse(
