@@ -7,6 +7,7 @@ from typing import Optional, List
 from fastapi.responses import RedirectResponse
 from lexochecker import assess_url_risk
 from interfaces import (check_google_safe_browsing, check_virustotal)
+from emailchecker import TextPhishingAssessment, check_email
 
 #load keys from .env
 load_dotenv()
@@ -50,14 +51,9 @@ class KeywordMatch(BaseModel):
     keyword: str
     weight: float
 
-class EmailTextAnalysis(BaseModel):
-    status: str
-    combined_risk_weight: float
-    matches_found: List[KeywordMatch]
-
 class LocalReport(BaseModel):
     url_lexical_analysis: Optional[UrlLexicalAnalysis] = None
-    email_text_keyword_analysis: Optional[EmailTextAnalysis] = None
+    email_text_keyword_analysis: Optional[TextPhishingAssessment] = None
 
 class ExternalReport(BaseModel):
     status: str
@@ -80,53 +76,43 @@ async def redirect_to_docs():
 
 @app.post(
     "/analyze",
-    response_model=AnalysisResponse,  # Tells FastAPI to validate the outbound structure
+    response_model=AnalysisResponse,
     status_code=200
 )
 async def analyze_input(phish: AnalysisRequest):
     if not phish.url and not phish.email_text:
         raise HTTPException(status_code=400, detail="Must provide a URL or email text.")
 
-    # 1. Initialize Pydantic models with baseline safe defaults
-    local_report_obj = LocalReport()
-
-    external_report_obj = ExternalReport(
-        status="empty",
-        input_received=phish.url if phish.url else "Text Payload Only"
-    )
+    # 1. Initialize holding variables as None/defaults instead of empty Pydantic objects
+    url_lexical_data = None
+    email_analysis_data = None
 
     # 2. Process URL Lexical Analysis
     if phish.url:
         try:
             raw_lex = await assess_url_risk(phish.url)
-            # Explicitly parse the raw dictionary into the target Pydantic sub-model
-            local_report_obj.url_lexical_analysis = UrlLexicalAnalysis(**raw_lex)
+            url_lexical_data = UrlLexicalAnalysis(**raw_lex)
         except Exception as e:
-            local_report_obj.url_lexical_analysis = UrlLexicalAnalysis(
+            url_lexical_data = UrlLexicalAnalysis(
                 url=phish.url,
                 verdict="ERROR",
                 risk_score=1.0,
                 reasons=[f"Lexical module failure: {str(e)}"]
             )
 
-    # 3. Process Email Text Keywords - TODO - use llm to read the email for suspicious wording
+    # 3. Process Email Text Keywords (Populates straight from the awaited function)
     if phish.email_text:
-        # (Assuming you ran your database loops here and generated 'matches' and 'total_weight')
-        detected_matches = [KeywordMatch(keyword="signin", weight=0.5)]  # Example payload
+        email_analysis_data = await check_email(phish.email_text)
 
-        local_report_obj.email_text_keyword_analysis = EmailTextAnalysis(
-            status="Analyzed",
-            combined_risk_weight=0.5,
-            matches_found=detected_matches
-        )
+    # 4. Process External Threats
+    external_report_obj = ExternalReport(
+        status="received" if phish.url else "empty",
+        input_received=phish.url if phish.url else "Text Payload Only"
+    )
 
-    # 4. Process External Threats (Google/VT Example updates)
     if phish.url:
-        external_report_obj.status = "received"
         if VT_KEY:
             vt = await check_virustotal(phish.url, VT_KEY)
-
-            # Defensive check: if VT returned an error dict instead of stats, handle it gracefully
             if "error" in vt:
                 external_report_obj.risk_level_from_virus_total = vt["error"]
                 external_report_obj.engines_flagged_on_vt = 0
@@ -136,18 +122,20 @@ async def analyze_input(phish: AnalysisRequest):
 
         if GOOGLE_KEY:
             google = await check_google_safe_browsing(phish.url, GOOGLE_KEY)
-
-            # If google is True, it means it found a match (Malicious)
             external_report_obj.google_safe_browsing = "Malicious / Flagged" if google else "Clean"
 
+    # 5. Build the LocalReport explicitly with the populated data objects
+    local_report_obj = LocalReport(
+        url_lexical_analysis=url_lexical_data,
+        email_text_keyword_analysis=email_analysis_data  # <-- Directly bound on creation
+    )
 
-    # 5. Build the Master Object explicitly mapping fields
+    # 6. Build the Master Response Object
     final_output = AnalysisResponse(
         local_report=local_report_obj,
         external_report=external_report_obj
     )
 
-    # Returning a native Pydantic model satisfies PyCharm's strict Type-Checker completely
     return final_output
 
 if __name__ == "__main__":
