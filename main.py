@@ -124,6 +124,7 @@ async def analyze_input(phish: AnalysisRequest):
             google = await check_google_safe_browsing(phish.url, GOOGLE_KEY)
             external_report_obj.google_safe_browsing = "Malicious / Flagged" if google else "Clean"
 
+
     # 5. Build the LocalReport explicitly with the populated data objects
     local_report_obj = LocalReport(
         url_lexical_analysis=url_lexical_data,

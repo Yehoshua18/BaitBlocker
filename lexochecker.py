@@ -164,11 +164,11 @@ async def assess_url_risk(url: str) -> dict:
 
     # Determine general verdict threshold
     if final_score >= 0.6:
-        verdict = "HIGH_RISK"
+        verdict = "High Risk"
     elif final_score >= 0.3:
-        verdict = "SUSPICIOUS"
+        verdict = "Suspicious"
     else:
-        verdict = "SAFE"
+        verdict = "Safe"
 
     return {
         "url": url,
