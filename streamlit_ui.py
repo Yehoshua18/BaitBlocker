@@ -1,3 +1,5 @@
+import base64
+
 import streamlit as st
 import requests
 
@@ -22,6 +24,14 @@ with title_col:
     st.caption("Built by Yehoshua Gruenspecht")
 
 st.markdown("---")
+
+st.sidebar.header("⚙️ Engine Configurations")
+activate_sandbox = st.sidebar.checkbox(
+    "Enable Deep Visual Sandbox",
+    value=False,
+    help="Spins up an isolated headless browser instance to capture a secure screenshot. Increases execution runtime."
+)
+st.sidebar.header("🐟 About")
 
 # Layout: Split into two columns for input
 col1, col2 = st.columns(2)
@@ -52,7 +62,8 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                 # Prepare the standardized POST payload
                 payload = {
                     "url": clean_url,
-                    "email_text": clean_email
+                    "email_text": clean_email,
+                    "run_sandbox": activate_sandbox
                 }
 
                 # Hit your comprehensive endpoint using POST
@@ -68,6 +79,7 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
 
                     local_rep = data.get("local_report", {}) or {}
                     ext_rep = data.get("external_report", {}) or {}
+                    sandbox = data.get("sandbox", {}) or {}
 
                     st.success("Analysis Complete!")
 
@@ -80,8 +92,8 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                     st.markdown("---")
 
                     # DISPLAY RESULTS IN TABS
-                    tab1, tab2, tab3 = st.tabs(
-                        ["📊 Executive Summary", "🧠 Local Logic Analytics", "🌐 External Threat Intelligence"])
+                    tab1, tab2, tab3, tab4 = st.tabs(
+                        ["📊 Executive Summary", "🧠 Local Logic Analytics", "🌐 External Threat Intelligence", "🖼️ Live Sandbox View"])
 
                     with tab1:
                         st.subheader("Quick Metrics Overview")
@@ -128,6 +140,26 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                     with tab3:
                         st.subheader("Third-Party Intelligence Reputations")
                         st.json(ext_rep)
+
+                    with tab4:
+                        st.subheader("Isolated Visual Replication Profile")
+
+                        sandbox_status = sandbox.get("sandbox_status", "N/A")
+                        final_dest = sandbox.get("final_destination", "N/A")
+                        screenshot_str = sandbox.get("screenshot_data")
+
+                        st.markdown(f"**Final Destination Hook:** `{final_dest}`")
+                        st.markdown(f"**Sandbox State:** `{sandbox_status}`")
+
+                        if screenshot_str:
+                            # Decode the string bytes directly into a visual browser block on the fly
+                            img_bytes = base64.b64decode(screenshot_str)
+                            st.image(
+                                img_bytes,
+                                caption="Visual payload signature captured within safe, headless cloud instance.",
+                            )
+                        else:
+                            st.info("No visual artifact captured for this entry. Ensure the target URL is active.")
 
                 else:
                     st.error(f"Backend API returned an error status ({response.status_code}): {response.text}")

@@ -8,13 +8,12 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, APIRouter, Query, Response, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from fastapi_cache import FastAPICache, JsonCoder
+from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
-from fastapi_cache.decorator import cache
 
 # Import your custom engine logic modules
 from lexochecker import assess_url_risk
-from interfaces import (check_google_safe_browsing, check_virustotal)
+from interfaces import (check_google_safe_browsing, check_virustotal, run_url_sandbox)
 from emailchecker import TextPhishingAssessment, check_email
 
 # Load environment keys
@@ -61,6 +60,7 @@ async def test_keys():
 class AnalysisRequest(BaseModel):
     url: Optional[str] = Field(None, examples=["https://signin-netflix.xyz"])
     email_text: Optional[str] = Field(None, examples=["Urgent: update your invoice billing info."])
+    run_sandbox: bool = Field(False, description="Toggle to execute heavy headless browser screenshots.")
 
 class UrlLexicalAnalysis(BaseModel):
     url: str
@@ -79,9 +79,15 @@ class ExternalReport(BaseModel):
     risk_level_from_virus_total: Optional[str] = None
     engines_flagged_on_vt: Optional[int] = None
 
+class SandboxReport(BaseModel):
+    sandbox_status: str
+    final_destination: str
+    screenshot_data: Optional[str]
+
 class AnalysisResponse(BaseModel):
     local_report: LocalReport
     external_report: ExternalReport
+    sandbox: SandboxReport
 
 # --- CORE ROUTING LOOPS ---
 
@@ -123,6 +129,21 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
     """
     Comprehensive multi-engine threat analyzer with an engineered manual cache layer.
     """
+
+    if not phish.url and not phish.email_text:
+        raise HTTPException(status_code=400, detail="Must provide a URL or email text.")
+
+    url_lexical_data = None
+    email_analysis_data = None
+    sandbox_report_obj = SandboxReport(
+        sandbox_status="N/A",
+        final_destination="N/A",
+        screenshot_data="N/A"
+    )
+
+    cache_key = None
+    backend = None
+
     # 1. GENERATE A UNIQUE CACHE KEY: Hash the incoming user inputs manually
     if phish.url:
         cache_key = f"url_scan:{phish.url.strip().lower()}"
@@ -142,14 +163,17 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         # Explicitly append the MISS header so Streamlit catches it
         response.headers.append("X-Cache", "MISS")
 
-    if not phish.url and not phish.email_text:
-        raise HTTPException(status_code=400, detail="Must provide a URL or email text.")
+        if phish.run_sandbox:
+            sandbox_result = await run_url_sandbox(phish.url)
+            sandbox_report_obj.sandbox_status = sandbox_result["status"]
+            sandbox_report_obj.screenshot_data = sandbox_result["screenshot_base64"]
+            sandbox_report_obj.final_destination = sandbox_result["final_destination_url"]
+        else:
+            sandbox_report_obj.sandbox_status = "Skipped (User Opt-Out)"
+            sandbox_report_obj.final_destination = phish.url
+            sandbox_report_obj.screenshot_data = None
 
-    url_lexical_data = None
-    email_analysis_data = None
-
-    # Process URL Lexical Analysis
-    if phish.url:
+        # Process URL Lexical Analysis
         try:
             raw_lex = await assess_url_risk(phish.url)
             url_lexical_data = UrlLexicalAnalysis(**raw_lex)
@@ -194,7 +218,8 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
     # Compile final structured response
     final_response = AnalysisResponse(
         local_report=local_report_obj,
-        external_report=external_report_obj
+        external_report=external_report_obj,
+        sandbox=sandbox_report_obj
     )
 
     # 3. COMMIT TO CACHE MEMORY: Save this response object into RAM for 5 minutes (300 seconds)
@@ -204,4 +229,12 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
     return final_response
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import sys
+    import asyncio
+
+    # Ensure the policy is explicitly registered inside the main executing thread right at launch
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+    # Force uvicorn to use the standard asyncio backend instead of its auto-selector
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, loop="asyncio", reload=True)
