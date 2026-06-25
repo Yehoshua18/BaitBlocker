@@ -48,11 +48,11 @@ def get_all_keywords() -> List[Tuple[str, float]]:
     conn.close()
     return rows  # Returns a list of tuples: [('login', 0.5), ...]
 
-def get_by_type(type: str) -> List[str]:
+def get_by_type(category_type: str) -> List[str]:
     """Retrieves all dangerous brand names."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute(f"SELECT keyword FROM unsafe_keywords WHERE category = '{type}'")
+    cursor.execute(f"SELECT keyword FROM unsafe_keywords WHERE category = ?", (category_type,))
     rows = cursor.fetchall()
     conn.close()
     return [row[0] for row in rows]
@@ -104,3 +104,19 @@ def add_bulk_keywords(keywords_list: List[Tuple[str, str, float]]) -> int:
     conn.commit()
     conn.close()
     return len(cleaned_data)
+
+
+def import_keywords_from_file(filepath: str, category: str, default_weight: float = 0.25):
+    """Reads a line-separated text file of keywords and bulk-inserts them."""
+    keywords_to_import = []
+
+    with open(filepath, "r", encoding="utf-8") as file:
+        for line in file:
+            word = line.strip()
+            # Skip comments or empty lines in the text file
+            if word and not word.startswith("#"):
+                keywords_to_import.append((word, category, default_weight))
+
+    if keywords_to_import:
+        added_count = add_bulk_keywords(keywords_to_import)
+        print(f"Successfully processed {added_count} records from {filepath}.")
