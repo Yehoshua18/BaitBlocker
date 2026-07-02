@@ -7,16 +7,16 @@ from rapidfuzz.distance import Levenshtein
 
 from matcher import KeywordScanner
 
-# Suspicious keywords often crammed into paths/subdomains to fool users
+keyword_scanner = KeywordScanner()
+
+# Suspicious keywords often crammed into paths/subdomains to fool users - in case keyword database is non-existent or empty
 SUSPICIOUS_KEYWORDS = {
     "login", "signin", "verify", "secure", "banking", "update",
     "account", "wallet", "paypal", "netflix", "amazon", "apple"
 }
 
-keyword_scanner = KeywordScanner()
-
-# High-risk top level domains frequently used in malicious infrastructure
-HIGH_RISK_TLDS = {".xyz", ".top", ".club", ".work", ".live", ".gq", ".tk", ".cf"}
+# High-risk top level domains frequently used in malicious infrastructure - based on cybercrimeinfocenter.org
+HIGH_RISK_TLDS = {".xyz", ".top", ".club", ".work", ".live", ".gq", ".tk", ".cf", ".icu", ".ru", ".cc", ".us", ".zip", ".pro", ".xin", ".win"}
 
 def calculate_entropy(string: str) -> float:
     """
@@ -27,7 +27,6 @@ def calculate_entropy(string: str) -> float:
         return 0.0 #no unique characters
     probabilities = [float(string.count(c)) / len(string) for c in set(string)] #how many times each character appears in the string
     return -sum(p * math.log2(p) for p in probabilities) #the formula to calculate shannon's entropy
-
 
 def detect_mutations(input_domain: str, known_brands: List[str]) -> List[dict]:
     """
@@ -60,6 +59,84 @@ def detect_mutations(input_domain: str, known_brands: List[str]) -> List[dict]:
 
     return detected
 
+def check_length(url: str, hostname: str) -> dict:
+    risk = {"score": 0.0, "reasons": []}
+    if len(url) > 75:
+        risk["score"] += 0.15
+        risk["reasons"].append("Excessive total URL length")
+    if len(hostname) > 30:
+        risk["score"] += 0.15
+        risk["reasons"].append("Excessive domain length")
+    return risk
+
+def check_special_characters(hostname: str) -> dict:
+    risk = {"score" : 0.0, "reasons" : []}
+    # Count special characters in the domain (excluding standard dots)
+    hyphen_count = hostname.count("-")
+    digit_count = sum(c.isdigit() for c in hostname)
+    subdomain_count = len(hostname.split(".")) - 2
+
+    if subdomain_count >= 3:
+        risk["score"] += 0.2
+        risk["reasons"].append(f"Suspicious sub-segmenting detected ({subdomain_count} routing layers)")
+
+    if hyphen_count > 2:
+        risk["score"] += 0.2
+        risk["reasons"].append(f"High number of hyphens in domain ({hyphen_count})")
+    if digit_count > 3:
+        risk["score"] += 0.2
+        risk["reasons"].append(f"High density of numbers in domain ({digit_count})")
+    return risk
+
+def check_keywords(url: str) -> dict:
+    risk = {"score": 0.0, "reasons": []}
+    db_scan_results = keyword_scanner.scan_url(url)
+    if db_scan_results["matches"]:
+        risk["score"] += 0.25 * len(db_scan_results["matches"])
+        risk["reasons"].append(f"Blacklisted keywords found: {db_scan_results['matches']}")
+
+    # If there is no database initialized, use the suspicious keyword list
+    '''
+    found_keywords = [word for word in SUSPICIOUS_KEYWORDS if word in url]
+    # Check if they are trying to trick the user (e.g., 'paypal' is present but it's not the actual brand domain)
+    if found_keywords:
+        # Simple safeguard: if the brand is inside the string but doesn't map to the core domain
+        risk_score += 0.25 * len(found_keywords)
+        reasons.append(f"Suspicious keywords detected: {found_keywords}")
+    '''
+
+    return risk
+
+def check_typosquatting(hostname: str) -> dict:
+    risk = {"score": 0.0, "reasons": []}
+    # Fallback/Safety valve if your database table is empty during testing
+    brands = get_by_type("brand")
+    if not brands:
+        brands = ["google", "paypal", "microsoft", "netflix"]
+
+    # Run the algorithmic distance evaluation
+    # Extract just the core name label before the TLD dot (e.g., "g00gle.com" -> "g00gle")
+    clean_host_label = hostname.split(".")[0] if hostname else ""
+    matches = detect_mutations(clean_host_label, brands)
+    if len(matches) > 0:
+        risk["score"] += 0.3 * len(matches)
+        risk["reasons"].append(f"Suspicious mutation detected: {matches}")
+    return risk
+
+def ip_check(hostname: str) -> dict:
+    risk = {"score": 0.0, "reasons": []}
+    # We strip brackets [] because urlparse preserves them around IPv6 hostnames
+    clean_host = hostname.strip("[]")
+    try:
+        # If this succeeds, the hostname is a valid raw IPv4 or IPv6 address - high risk score
+        ip_obj = ipaddress.ip_address(clean_host)
+        risk["score"] += 0.6
+        risk["reasons"].append(f"Host is a raw IP address ({ip_obj.version}) instead of a domain name")
+    except ValueError:
+        # If a ValueError is thrown, it's a standard text domain (like google.com), so we move on safely
+        pass
+    return risk
+
 async def assess_url_risk(url: str) -> dict:
     """
     Lexicographically evaluates a URL and returns a risk score profile.
@@ -83,58 +160,24 @@ async def assess_url_risk(url: str) -> dict:
     reasons = []
 
     # 1. Length Checks (Malicious URLs often hide payloads or subdomains in long strings)
-    if len(url) > 75:
-        risk_score += 0.15
-        reasons.append("Excessive total URL length")
-    if len(hostname) > 30:
-        risk_score += 0.15
-        reasons.append("Excessive domain length")
+    length_risk = check_length(url, hostname)
+    risk_score += length_risk["score"]
+    reasons.append(length_risk["reasons"])
 
     # 2. Structural/Character Checks
-    # Count special characters in the domain (excluding standard dots)
-    hyphen_count = hostname.count("-")
-    digit_count = sum(c.isdigit() for c in hostname)
-    subdomain_count = len(hostname.split(".")) - 2
-
-    if subdomain_count >= 3:
-        risk_score += 0.2
-        reasons.append(f"Suspicious sub-segmenting detected ({subdomain_count} routing layers)")
-
-    if hyphen_count > 2:
-        risk_score += 0.2
-        reasons.append(f"High number of hyphens in domain ({hyphen_count})")
-    if digit_count > 3:
-        risk_score += 0.2
-        reasons.append(f"High density of numbers in domain ({digit_count})")
+    special_character_risk = check_special_characters(hostname)
+    risk_score += special_character_risk["score"]
+    reasons.append(special_character_risk["reasons"])
 
     # 3. Keyword Squatting (Brand names or bait words in paths/subdomains)
-    db_scan_results = keyword_scanner.scan_url(url)
-    if db_scan_results["matches"]:
-        risk_score += 0.25 * len(db_scan_results["matches"])
-        reasons.append(f"Blacklisted keywords found: {db_scan_results['matches']}")
-    '''
-    found_keywords = [word for word in SUSPICIOUS_KEYWORDS if word in url]
-    # Check if they are trying to trick the user (e.g., 'paypal' is present but it's not the actual brand domain)
-    if found_keywords:
-        # Simple safeguard: if the brand is inside the string but doesn't map to the core domain
-        risk_score += 0.25 * len(found_keywords)
-        reasons.append(f"Suspicious keywords detected: {found_keywords}")
-    '''
+    keyword_risk = check_keywords(url)
+    risk_score += keyword_risk["score"]
+    reasons.append(keyword_risk["reasons"])
 
     # 4. Typosquatting (similar to existing brand names)
-
-    # Fallback/Safety valve if your database table is empty during testing
-    brands = get_by_type("brand")
-    if not brands:
-        brands = ["google", "paypal", "microsoft", "netflix"]
-
-    # 4.2. Run the algorithmic distance evaluation
-    # Extract just the core name label before the TLD dot (e.g., "g00gle.com" -> "g00gle")
-    clean_host_label = hostname.split(".")[0] if hostname else ""
-    matches = detect_mutations(clean_host_label, brands)
-    if len(matches) > 0:
-        risk_score += 0.3 * len(matches)
-        reasons.append(f"Suspicious mutation detected: {matches}")
+    typosquatting_risk = check_typosquatting(hostname)
+    risk_score += typosquatting_risk["score"]
+    reasons.append(typosquatting_risk["reasons"])
 
     # 5. TLD Risk Assessment
     if any(hostname.endswith(tld) for tld in HIGH_RISK_TLDS):
@@ -142,16 +185,9 @@ async def assess_url_risk(url: str) -> dict:
         reasons.append("Uses a statistically high-risk top-level domain (TLD)")
 
     # 6. IP Address Check (Direct IP URLs are overwhelmingly malicious/scams)
-    # We strip brackets [] because urlparse preserves them around IPv6 hostnames
-    clean_host = hostname.strip("[]")
-    try:
-        # If this succeeds, the hostname is a valid raw IPv4 or IPv6 address
-        ip_obj = ipaddress.ip_address(clean_host)
-        risk_score += 0.6
-        reasons.append(f"Host is a raw IP address ({ip_obj.version}) instead of a domain name")
-    except ValueError:
-        # If a ValueError is thrown, it's a standard text domain (like google.com), so we move on safely
-        pass
+    ip_risk = ip_check(hostname)
+    risk_score += ip_risk["score"]
+    reasons.append(ip_risk["reasons"])
 
     # 7. Entropy Check (Looks for randomly generated strings)
     entropy = calculate_entropy(hostname)
