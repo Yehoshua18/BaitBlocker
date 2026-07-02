@@ -96,14 +96,14 @@ def check_keywords(url: str) -> dict:
         risk["reasons"].append(f"Blacklisted keywords found: {db_scan_results['matches']}")
 
     # If there is no database initialized, use the suspicious keyword list
-    '''
+    """
     found_keywords = [word for word in SUSPICIOUS_KEYWORDS if word in url]
     # Check if they are trying to trick the user (e.g., 'paypal' is present but it's not the actual brand domain)
     if found_keywords:
         # Simple safeguard: if the brand is inside the string but doesn't map to the core domain
         risk_score += 0.25 * len(found_keywords)
         reasons.append(f"Suspicious keywords detected: {found_keywords}")
-    '''
+    """
 
     return risk
 
