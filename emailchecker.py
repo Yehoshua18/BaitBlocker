@@ -65,10 +65,10 @@ async def check_email(email: str) -> Optional[TextPhishingAssessment]:
         ])
 
         response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages_payload,  # <-- Linter is now perfectly happy
+            model="qwen/qwen3-32b",
+            messages=messages_payload,
             response_format=cast(Any,{"type": "json_object"}),
-            temperature=0.1
+            temperature=0.6
         )
 
         # 1. Extract the raw text string containing the JSON
@@ -84,7 +84,7 @@ async def check_email(email: str) -> Optional[TextPhishingAssessment]:
         print(f"Error during API call or parsing: {e}")
         return TextPhishingAssessment(
         phishing_probability=0.0,
-        risk_level="Unknown",
+        risk_level="High",
         red_flags=["API Error Encountered"],
         summary_analysis="The AI analysis could not execute. Check server logs and API quotas.",
         recommended_action="Flag/Warn User"

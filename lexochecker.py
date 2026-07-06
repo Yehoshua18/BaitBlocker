@@ -162,22 +162,22 @@ async def assess_url_risk(url: str) -> dict:
     # 1. Length Checks (Malicious URLs often hide payloads or subdomains in long strings)
     length_risk = check_length(url, hostname)
     risk_score += length_risk["score"]
-    reasons.append(length_risk["reasons"])
+    reasons.extend(length_risk["reasons"])
 
     # 2. Structural/Character Checks
     special_character_risk = check_special_characters(hostname)
     risk_score += special_character_risk["score"]
-    reasons.append(special_character_risk["reasons"])
+    reasons.extend(special_character_risk["reasons"])
 
     # 3. Keyword Squatting (Brand names or bait words in paths/subdomains)
     keyword_risk = check_keywords(url)
     risk_score += keyword_risk["score"]
-    reasons.append(keyword_risk["reasons"])
+    reasons.extend(keyword_risk["reasons"])
 
     # 4. Typosquatting (similar to existing brand names)
     typosquatting_risk = check_typosquatting(hostname)
     risk_score += typosquatting_risk["score"]
-    reasons.append(typosquatting_risk["reasons"])
+    reasons.extend(typosquatting_risk["reasons"])
 
     # 5. TLD Risk Assessment
     if any(hostname.endswith(tld) for tld in HIGH_RISK_TLDS):
@@ -187,7 +187,7 @@ async def assess_url_risk(url: str) -> dict:
     # 6. IP Address Check (Direct IP URLs are overwhelmingly malicious/scams)
     ip_risk = ip_check(hostname)
     risk_score += ip_risk["score"]
-    reasons.append(ip_risk["reasons"])
+    reasons.extend(ip_risk["reasons"])
 
     # 7. Entropy Check (Looks for randomly generated strings)
     entropy = calculate_entropy(hostname)
