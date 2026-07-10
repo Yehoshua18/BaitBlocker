@@ -222,9 +222,21 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         sandbox=sandbox_report_obj
     )
 
-    # 3. COMMIT TO CACHE MEMORY: Save this response object into RAM for 5 minutes (300 seconds)
-    serialized_data = json.dumps(final_response.model_dump())
-    await backend.set(cache_key, serialized_data, expire=300)
+    # 3. COMMIT TO CACHE MEMORY (Only if a cache_key and backend were initialized)
+    if cache_key and backend:
+        serialized_data = json.dumps(final_response.model_dump())
+
+        # Safely extract the verdict using dot notation, defaulting to None if object is missing
+        lexical_report = final_response.local_report.url_lexical_analysis
+        verdict = lexical_report.verdict if lexical_report else None
+
+        # Determine the security-driven TTL profile
+        if verdict == "Clean":
+            # If the link is clean, save for a short time to catch rapid domain takeovers
+            await backend.set(cache_key, serialized_data, expire=300)
+        else:
+            # Otherwise (Suspicious/Malicious/Error), keep it cached for 10 hours
+            await backend.set(cache_key, serialized_data, expire=36000)
 
     return final_response
 

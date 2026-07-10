@@ -74,17 +74,20 @@ async def check_virustotal(url: str, key: str):
 
 async def _execute_sandbox_logic(url: str) -> dict:
     """Core browser execution logic."""
+    # Create a sandbox browser using Playwright's Chromium
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         viewport = ViewportSize(width=1280, height=720)
         context = await browser.new_context(
             viewport=viewport,
+            # Use a very common user_agent string to avoid bot detection
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         )
         page = await context.new_page()
 
         try:
             response = await page.goto(url, wait_until="networkidle", timeout=10000)
+            # Give us the actual URL if the attacker encrypted it
             final_url = page.url
             screenshot_bytes = await page.screenshot(full_page=False)
             encoded_screenshot = base64.b64encode(screenshot_bytes).decode('utf-8')
