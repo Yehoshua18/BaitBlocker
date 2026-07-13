@@ -13,18 +13,13 @@ st.set_page_config(
 # API Endpoint definitions
 FASTAPI_ANALYZE = "http://localhost:8000/analyze"
 
-log_col, title_col = st.columns([1, 4])
-
-with log_col:
-    st.image("BaitBlockerLogoV1.png")
-
-with title_col:
-    st.title("🛡️ BaitBlocker Threat Analysis Engine")
-    st.subheader("Phishing Detection Engine ver 1.0.0")
-    st.caption("Built by Yehoshua Gruenspecht")
+st.title("🛡️ Bait Blocker Threat Analysis Engine")
+st.subheader("Phishing Detection Engine ver 1.0.0")
+st.caption("Built by Yehoshua Gruenspecht")
 
 st.markdown("---")
 
+st.sidebar.image("BaitBlockerLogoV1.png")
 st.sidebar.header("⚙️ Engine Configurations")
 activate_sandbox = st.sidebar.checkbox(
     "Enable Deep Visual Sandbox",
@@ -32,6 +27,10 @@ activate_sandbox = st.sidebar.checkbox(
     help="Spins up an isolated headless browser instance to capture a secure screenshot. Increases execution runtime."
 )
 st.sidebar.header("🐟 About")
+st.sidebar.markdown("Bait Blocker is an anti-phishing tool that uses local and external engines to analyze URLs, AI LLMs to analyze email text and playwright sandbox to screenshot suspicious websites."
+                    " For quick running we recommend only testing the URL as Bait Blocker has a cache of already seen URLs."
+                    ""
+                    "  :blue-background[Customer Support - yehoshua809.tech@gmail.com]")
 
 # Layout: Split into two columns for input
 col1, col2 = st.columns(2)
