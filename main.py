@@ -163,7 +163,7 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         if cached_value is not None:
             # Cache Hit! Rehydrate the saved URL structures out of memory
             cache_hit = True
-            response.headers.append("X-Cache", "HIT")
+
 
             cached_data = json.loads(cached_value)
 
