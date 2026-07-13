@@ -15,7 +15,7 @@ async def check_google_safe_browsing(url: str, key: str):
             "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"],
             "platformTypes": ["ANY_PLATFORM"],
             "threatEntryTypes": ["URL"],
-            "threatEntries": [{"url": url}] #insert our URL into the safebrowsing API
+            "threatEntries": [{"url": url}] # Insert our URL into the safebrowsing API
         }
     }
     async with httpx.AsyncClient() as client:

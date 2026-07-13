@@ -141,8 +141,15 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         screenshot_data="N/A"
     )
 
+    # Process External Threats Engine
+    external_report_obj = ExternalReport(
+        status="received" if phish.url else "empty",
+        input_received=phish.url if phish.url else "Text Payload Only"
+    )
+
     cache_key = None
     backend = None
+    cache_hit = False
 
     # 1. GENERATE A UNIQUE CACHE KEY: Hash the incoming user inputs manually
     if phish.url:
@@ -152,62 +159,64 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         backend = FastAPICache.get_backend()
         cached_value = await backend.get(cache_key)
 
+
         if cached_value is not None:
-            # Cache Hit! Decode the JSON data straight out of memory
-            # We don't append an "X-Cache" header here, which tells Streamlit it's a Hit!
-            return json.loads(cached_value)
+            # Cache Hit! Rehydrate the saved URL structures out of memory
+            cache_hit = True
+            response.headers.append("X-Cache", "HIT")
 
-        # -------------------------------------------------------------
-        # CACHE MISS PIPELINE: If no cache exists, run your core logic
-        # -------------------------------------------------------------
-        # Explicitly append the MISS header so Streamlit catches it
-        response.headers.append("X-Cache", "MISS")
+            cached_data = json.loads(cached_value)
 
-        if phish.run_sandbox:
-            sandbox_result = await run_url_sandbox(phish.url)
-            sandbox_report_obj.sandbox_status = sandbox_result["status"]
-            sandbox_report_obj.screenshot_data = sandbox_result["screenshot_base64"]
-            sandbox_report_obj.final_destination = sandbox_result["final_destination_url"]
+            if "url_lexical_analysis" in cached_data and cached_data["url_lexical_analysis"]:
+                url_lexical_data = UrlLexicalAnalysis(**cached_data["url_lexical_analysis"])
+            if "external_report" in cached_data and cached_data["external_report"]:
+                external_report_obj = ExternalReport(**cached_data["external_report"])
+            if "sandbox" in cached_data and cached_data["sandbox"]:
+                sandbox_report_obj = SandboxReport(**cached_data["sandbox"])
         else:
-            sandbox_report_obj.sandbox_status = "Skipped (User Opt-Out)"
-            sandbox_report_obj.final_destination = phish.url
-            sandbox_report_obj.screenshot_data = None
+            # -------------------------------------------------------------
+            # CACHE MISS PIPELINE: If no cache exists, run your core logic
+            # -------------------------------------------------------------
+            # Explicitly append the MISS header so Streamlit catches it
+            response.headers.append("X-Cache", "MISS")
 
-        # Process URL Lexical Analysis
-        try:
-            raw_lex = await assess_url_risk(phish.url)
-            url_lexical_data = UrlLexicalAnalysis(**raw_lex)
-        except Exception as e:
-            url_lexical_data = UrlLexicalAnalysis(
-                url=phish.url,
-                verdict="ERROR",
-                risk_score=1.0,
-                reasons=[f"Lexical module failure: {str(e)}"]
-            )
+            if phish.run_sandbox:
+                sandbox_result = await run_url_sandbox(phish.url)
+                sandbox_report_obj.sandbox_status = sandbox_result["status"]
+                sandbox_report_obj.screenshot_data = sandbox_result["screenshot_base64"]
+                sandbox_report_obj.final_destination = sandbox_result["final_destination_url"]
+            else:
+                sandbox_report_obj.sandbox_status = "Skipped (User Opt-Out)"
+                sandbox_report_obj.final_destination = phish.url
+                sandbox_report_obj.screenshot_data = None
+
+            # Process URL Lexical Analysis
+            try:
+                raw_lex = await assess_url_risk(phish.url)
+                url_lexical_data = UrlLexicalAnalysis(**raw_lex)
+            except Exception as e:
+                url_lexical_data = UrlLexicalAnalysis(
+                    url=phish.url,
+                    verdict="ERROR",
+                    risk_score=1.0,
+                    reasons=[f"Lexical module failure: {str(e)}"]
+                )
+            if VT_KEY:
+                vt = await check_virustotal(phish.url, VT_KEY)
+                if "error" in vt:
+                    external_report_obj.risk_level_from_virus_total = vt["error"]
+                    external_report_obj.engines_flagged_on_vt = 0
+                else:
+                    external_report_obj.risk_level_from_virus_total = "Suspicious" if vt["total_risk"] > 0 else "Clean"
+                    external_report_obj.engines_flagged_on_vt = vt["total_risk"]
+
+            if GOOGLE_KEY:
+                google = await check_google_safe_browsing(phish.url, GOOGLE_KEY)
+                external_report_obj.google_safe_browsing = "Malicious / Flagged" if google else "Clean"
 
     # Process Email Text Keywords
     if phish.email_text:
         email_analysis_data = await check_email(phish.email_text)
-
-    # Process External Threats Engine
-    external_report_obj = ExternalReport(
-        status="received" if phish.url else "empty",
-        input_received=phish.url if phish.url else "Text Payload Only"
-    )
-
-    if phish.url:
-        if VT_KEY:
-            vt = await check_virustotal(phish.url, VT_KEY)
-            if "error" in vt:
-                external_report_obj.risk_level_from_virus_total = vt["error"]
-                external_report_obj.engines_flagged_on_vt = 0
-            else:
-                external_report_obj.risk_level_from_virus_total = "Suspicious" if vt["total_risk"] > 0 else "Clean"
-                external_report_obj.engines_flagged_on_vt = vt["total_risk"]
-
-        if GOOGLE_KEY:
-            google = await check_google_safe_browsing(phish.url, GOOGLE_KEY)
-            external_report_obj.google_safe_browsing = "Malicious / Flagged" if google else "Clean"
 
     # Assemble local parameters
     local_report_obj = LocalReport(
@@ -223,21 +232,24 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
     )
 
     # 3. COMMIT TO CACHE MEMORY (Only if a cache_key and backend were initialized)
-    if cache_key and backend:
-        serialized_data = json.dumps(final_response.model_dump())
+    if cache_key and backend and not cache_hit:
+        if url_lexical_data:
+            # Package and serialize ONLY the URL properties
+            url_cache_payload = {
+                "url_lexical_analysis": url_lexical_data.model_dump(),
+                "external_report": external_report_obj.model_dump(),
+                "sandbox": sandbox_report_obj.model_dump()
+            }
+            serialized_data = json.dumps(url_cache_payload)
+            verdict = url_lexical_data.verdict
 
-        # Safely extract the verdict using dot notation, defaulting to None if object is missing
-        lexical_report = final_response.local_report.url_lexical_analysis
-        verdict = lexical_report.verdict if lexical_report else None
-
-        # Determine the security-driven TTL profile
-        if verdict == "Clean":
-            # If the link is clean, save for a short time to catch rapid domain takeovers
-            await backend.set(cache_key, serialized_data, expire=300)
-        else:
-            # Otherwise (Suspicious/Malicious/Error), keep it cached for 10 hours
-            await backend.set(cache_key, serialized_data, expire=36000)
-
+            # Determine the security-driven TTL profile
+            if verdict == "Clean":
+                # If the link is clean, save for a short time to catch rapid domain takeovers
+                await backend.set(cache_key, serialized_data, expire=300)
+            else:
+                # Otherwise (Suspicious/Malicious/Error), keep it cached for 10 hours
+                await backend.set(cache_key, serialized_data, expire=36000)
     return final_response
 
 if __name__ == "__main__":
@@ -252,9 +264,9 @@ if __name__ == "__main__":
         # Force uvicorn to use the standard asyncio backend instead of its auto-selector
     uvicorn.run("main:app", host="0.0.0.0", port=8000, loop="asyncio", reload=True)
 
-    #Script to add keywords to database
 
-    '''
+    #Script to add keywords to database
+    '''-------------------------------------------------------------------------------------------------------
     from database import add_bulk_keywords
     
     keywords = [("access", "urgency", 0.2),
@@ -358,4 +370,4 @@ if __name__ == "__main__":
                 ("nytimes", "brand", 0.9),
                 ]
     add_bulk_keywords(keywords)
-'''
+_________________________________________________________________________________________________________'''

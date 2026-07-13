@@ -18,6 +18,8 @@ SUSPICIOUS_KEYWORDS = {
 # High-risk top level domains frequently used in malicious infrastructure - based on cybercrimeinfocenter.org
 HIGH_RISK_TLDS = {".xyz", ".top", ".club", ".work", ".live", ".gq", ".tk", ".cf", ".icu", ".ru", ".cc", ".us", ".zip", ".pro", ".xin", ".win"}
 
+MAX_ALLOWED_CHARS = 2048
+
 def calculate_entropy(string: str) -> float:
     """
     Calculates Shannon Entropy to measure string randomness.
@@ -141,6 +143,14 @@ async def assess_url_risk(url: str) -> dict:
     """
     Lexicographically evaluates a URL and returns a risk score profile.
     """
+    # Protect Bait Blocker against DoS attacks by capping the maximum amount of characters a user can input
+    if not isinstance(url, str) or len(url) > MAX_ALLOWED_CHARS:
+        return {
+            "verdict": "MALFORMED",
+            "risk_score": 1.0,
+            "reasons": ["Critical: Input exceeds maximum safe string length or is invalid type."]
+        }
+
     # Clean up basic spacing/lowercase to avoid simple evasion tricks
     url = url.strip().lower()
 
