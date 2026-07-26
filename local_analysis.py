@@ -64,10 +64,10 @@ def detect_mutations(input_domain: str, known_brands: List[str]) -> List[dict]:
 def check_length(url: str, hostname: str) -> dict:
     risk = {"score": 0.0, "reasons": []}
     if len(url) > 75:
-        risk["score"] += 0.15
+        risk["score"] += 0.1
         risk["reasons"].append("Excessive total URL length")
     if len(hostname) > 30:
-        risk["score"] += 0.15
+        risk["score"] += 0.2
         risk["reasons"].append("Excessive domain length")
     return risk
 
@@ -91,11 +91,14 @@ def check_special_characters(hostname: str) -> dict:
     return risk
 
 def check_keywords(url: str) -> dict:
-    risk = {"score": 0.0, "reasons": []}
+    risk = {"score": 0.0, "reasons": [], "brand": False}
     db_scan_results = keyword_scanner.scan_url(url)
-    if db_scan_results["matches"]:
-        risk["score"] += 0.25 * len(db_scan_results["matches"])
-        risk["reasons"].append(f"Blacklisted keywords found: {db_scan_results['matches']}")
+    brands = keyword_scanner.scan_for_keywords_by_type(url, "brand")
+    sus_keywords = list(set(db_scan_results["matches"]) - set(brands["matches"]))
+    risk["score"] += 0.25 * len(sus_keywords)
+    risk["reasons"].append(f"Blacklisted keywords found: {db_scan_results['matches']}")
+    risk["brand"] = True if brands else False
+
 
     # If there is no database initialized, use the suspicious keyword list
     """
@@ -132,7 +135,7 @@ def ip_check(hostname: str) -> dict:
     try:
         # If this succeeds, the hostname is a valid raw IPv4 or IPv6 address - high risk score
         ip_obj = ipaddress.ip_address(clean_host)
-        risk["score"] += 0.6
+        risk["score"] += 1.0
         risk["reasons"].append(f"Host is a raw IP address ({ip_obj.version}) instead of a domain name")
     except ValueError:
         # If a ValueError is thrown, it's a standard text domain (like google.com), so we move on safely
@@ -171,7 +174,6 @@ async def assess_url_risk(url: str) -> dict:
 
     # 1. Length Checks (Malicious URLs often hide payloads or subdomains in long strings)
     length_risk = check_length(url, hostname)
-    risk_score += length_risk["score"]
     reasons.extend(length_risk["reasons"])
 
     # 2. Structural/Character Checks
@@ -202,8 +204,24 @@ async def assess_url_risk(url: str) -> dict:
     # 7. Entropy Check (Looks for randomly generated strings)
     entropy = calculate_entropy(hostname)
     if entropy > 4.2:  # 4.2+ is heavily random for typical commercial domain names
-        risk_score += 0.2
+        risk_score = 1.0
         reasons.append(f"High domain character randomness (Entropy: {entropy:.2f})")
+
+    # Special calculations to avoid false positives especially with popular brand names
+    if "Excessive total URL length" in reasons and keyword_risk["brand"] == True and len(reasons) > 2:
+        risk_score += length_risk["score"] + 0.2
+
+    elif "Excessive total URL length" in reasons and len(reasons) > 2:
+        risk_score += length_risk["score"]
+
+    elif keyword_risk["brand"] == True and len(reasons) > 2:
+        risk_score += 0.2
+
+    else:
+        risk_score += 0.1
+        reasons = [f"Long URL from known brand in - {keyword_risk['reasons']}"]
+
+
 
     # Normalize score between 0.0 and 1.0 (0% - 100%)
     final_score = min(round(risk_score, 2), 1.0)
