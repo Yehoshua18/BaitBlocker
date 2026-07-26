@@ -217,9 +217,7 @@ async def assess_url_risk(url: str) -> dict:
     elif keyword_risk["brand"] == True and len(reasons) > 2:
         risk_score += 0.2
 
-    else:
-        risk_score += 0.1
-        reasons = [f"Long URL from known brand in - {keyword_risk['reasons']}"]
+
 
 
 
