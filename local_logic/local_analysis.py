@@ -2,10 +2,10 @@ import math
 from typing import List
 from urllib.parse import urlparse
 import ipaddress
-from database import get_by_type
+from db.database import get_by_type
 from rapidfuzz.distance import Levenshtein
 
-from matcher import KeywordScanner
+from db.matcher import KeywordScanner
 
 keyword_scanner = KeywordScanner()
 
@@ -208,14 +208,14 @@ async def assess_url_risk(url: str) -> dict:
         reasons.append(f"High domain character randomness (Entropy: {entropy:.2f})")
 
     # Special calculations to avoid false positives especially with popular brand names
-    if "Excessive total URL length" in reasons and keyword_risk["brand"] == True and len(reasons) > 2:
-        risk_score += length_risk["score"] + 0.2
+    if "Excessive total URL length" in reasons and keyword_risk["brand"] == True and len(reasons) == 2:
+        risk_score = 0.1
+    elif len(reasons) > 2:
+        if "Excessive total URL length" in reasons:
+            risk_score += length_risk["score"]
 
-    elif "Excessive total URL length" in reasons and len(reasons) > 2:
-        risk_score += length_risk["score"]
-
-    elif keyword_risk["brand"] == True and len(reasons) > 2:
-        risk_score += 0.2
+        if keyword_risk["brand"]:
+            risk_score += 0.2
 
 
 

@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     #Script to add keywords to database
     '''-------------------------------------------------------------------------------------------------------
-    from database import add_bulk_keywords
+    from db.database import add_bulk_keywords
     
     keywords = [("access", "urgency", 0.2),
                 ("accounts", "account", 0.2),

@@ -1,5 +1,5 @@
 import re
-from database import get_all_keywords, init_db, get_by_type
+from db.database import get_all_keywords, init_db, get_by_type
 
 
 class KeywordScanner:
