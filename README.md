@@ -3,7 +3,7 @@
 
 ### Key Features:
 - **Local and external URL analysis** - Scans and blocks malicious URLs instantly
-- **Social engeneering detection and prevention** - Identifies psychological manipulation patterns and deceptive tactics
+- **Social engineering detection and prevention** - Identifies psychological manipulation patterns and deceptive tactics
 - **Easy everyday use** - Simple and effective Streamlit UI 
 - **Sandbox screenshot of suspicious links** - For better understanding of the program's findings
 
@@ -16,7 +16,7 @@
 
 ### 💻 Installation
 **Prerequisites**
-- Python 3.9+
+- Python 3.8+
 - Redis (for caching and rate limiting)
 
 **From Source**
@@ -27,27 +27,60 @@ cd baitblocker
 pip install -r requirements.txt
 ```
 
+**Environment Setup**
+```bash
+python -bin venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+```
+### ⚙️ Configuration
+Create a .env file in the root directory of the project to configure your external application keys:
+
+```Code snippet
+# Server Configuration
+HOST=127.0.0.1
+PORT=8000
+
+# Threat Intelligence API Keys
+VIRUSTOTAL_API_KEY=your_virustotal_key_here
+GOOGLE_SAFE_BROWSING_KEY=your_google_safe_browsing_key_here
+
+# LLM Configuration
+LLM_API_KEY=your_llm_provider_key_here
+```
+
 ### 🏃 How to Run
+The full program can be run in the main or each file separately
+
 **Run FastAPI**
 ```bash
-uvicorn main:app --reload
+uvicorn backendAPI:app --reload
 ```
 **Run UI**
 ```bash
 streamlit run streamlit_ui.py
 ```
 
-### 🏗️ Arcitecture
-Can be found in the Report.html file
+### 🏗️ Architecture
+<img width="945" height="518" alt="image" src="https://github.com/user-attachments/assets/edb07325-6f63-4a5d-967b-0384ce8ab381" />
 
-[
-Performance (benchmarks, metrics)
-Deployment (enterprise focus)
-Roadmap / Future Plans
-Contributing
-License
-]
+All analysis layers run asynchronously via **FastAPI** to optimize runtime processing. If a cache hit occurs in Layer 1, the engine short-circuits the remaining pipeline to serve immediate results for the URL while email analysis still occurs.
+A full report and explanation can be found in the Report.html file.
+
+### 💻 Tech Stack
+
+| Component | Technology | Purpose |
+| :--- | :--- | :--- |
+| **Backend Framework** | Python / FastAPI | Async request handling & input validation |
+| **Frontend UI** | Streamlit | Minimalist, interactive user dashboard |
+| **Database/Cache** | SQLite3 / FastAPI Cache | Persistent keyword storage & temporary TTL cache |
+| **Automation Sandbox**| Playwright | Headless browser rendering for visual auditing |
+
+
+### 🗺️ Roadmap / Future Plans
+- **Incorporating ML:** By incorporating ML, the false positive rate can be lowered while also cutting down on AI usage for email analysis.
+- **Payload Extraction:** Enhance the Playwright sandbox layer to intercept and log forced background malware downloads automatically
 
 ### 🖋️ Author
 **Built by Yehoshua Grunespecht**
 B.Sc. Computer Science
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
