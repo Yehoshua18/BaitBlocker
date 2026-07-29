@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import ipaddress
 from db.database import get_by_type
 from rapidfuzz.distance import Levenshtein
-
+from interfaces import perform_whois_lookup
 from db.matcher import KeywordScanner
 
 keyword_scanner = KeywordScanner()
@@ -207,19 +207,34 @@ async def assess_url_risk(url: str) -> dict:
         risk_score = 1.0
         reasons.append(f"High domain character randomness (Entropy: {entropy:.2f})")
 
-    # Special calculations to avoid false positives especially with popular brand names
-    if "Excessive total URL length" in reasons and keyword_risk["brand"] == True and len(reasons) == 2:
+    # 8. WHOIS Lookup
+    lookup = perform_whois_lookup(url)
+    age = 0
+    if lookup:
+        # If the domain age is young, the domain was created recently and is more likely phishing
+        age = lookup["age_days"]
+        if age < 30:
+            risk_score += 0.6
+            reasons.append(f"Young Domain Age: {age:.2f}")
+
+    """
+    Special calculations to avoid false positives especially with popular brand names 
+    """
+    # A long URL or a URL containing a brand name (or both) is not so suspicious if there are no other suspicious factors
+    if "Excessive total URL length" in reasons and keyword_risk["brand"] == True and len(reasons) <= 2 and age > 150:
         risk_score = 0.1
+
+    # If there are other reasons, add risk scores as usual
     elif len(reasons) > 2:
         if "Excessive total URL length" in reasons:
             risk_score += length_risk["score"]
 
         if keyword_risk["brand"]:
-            risk_score += 0.2
-
-
-
-
+            # If the URL has a known brand name but is young, that should raise our risk score
+            if age > 365:
+                risk_score += 0.2
+            else:
+                risk_score += 0.3
 
     # Normalize score between 0.0 and 1.0 (0% - 100%)
     final_score = min(round(risk_score, 2), 1.0)

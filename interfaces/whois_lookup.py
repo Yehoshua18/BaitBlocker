@@ -47,9 +47,3 @@ def perform_whois_lookup(domain_or_url: str) -> dict:
     except Exception as e:
         # Thrown for network timeouts or socket errors
         return {"status": "ERROR", "domain": domain, "error": str(e)}
-
-
-# --- Quick Test ---
-if __name__ == "__main__":
-    result = perform_whois_lookup("https://www.google.com/search")
-    print(result)
