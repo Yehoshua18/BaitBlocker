@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baitblocker"
+version = "1.0.0"
+description = "Real-time phishing and social engineering detection"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+  "fastapi>=0.103",
+  "uvicorn>=0.22",
+  "pydantic>=2.5",
+  "starlette>=0.27",
+  "python-dotenv>=1.0",
+  "httpx>=0.24",
+  "streamlit>=1.25",
+  "requests>=2.31",
+  "fastapi-cache2>=0.2",
+  "playwright>=1.35",
+  "python-whois>=0.8",
+  "rapidfuzz>=3.0",
+  "openai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-asyncio>=0.21",
+  "pytest-cov>=4.0",
+  "pytest-timeout>=2.1",
+  "black>=23.0",
+  "isort>=5.12",
+  "ruff>=0.4",
+  "mypy>=1.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["baitblocker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --strict-markers --tb=short --disable-warnings"
+markers = [
+  "asyncio: marks tests as async",
+  "integration: marks integration tests",
+  "unit: marks unit tests",
+  "slow: marks slow tests",
+]
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+target-version = "py37"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+
+

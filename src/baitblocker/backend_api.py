@@ -156,8 +156,12 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         cache_key = f"url_scan:{phish.url.strip().lower()}"
 
         # 2. CHECK THE CACHE ENGINE
-        backend = FastAPICache.get_backend()
-        cached_value = await backend.get(cache_key)
+        try:
+            backend = FastAPICache.get_backend()
+        except AssertionError:
+            backend = None
+
+        cached_value = await backend.get(cache_key) if backend else None
 
 
         if cached_value is not None:
