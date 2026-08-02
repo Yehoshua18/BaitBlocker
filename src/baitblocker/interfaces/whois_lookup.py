@@ -47,3 +47,4 @@ def perform_whois_lookup(domain_or_url: str) -> dict:
     except Exception as e:
         # Thrown for network timeouts or socket errors
         return {"status": "ERROR", "domain": domain, "error": str(e)}
+

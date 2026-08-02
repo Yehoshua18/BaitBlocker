@@ -10,10 +10,11 @@ from pydantic import BaseModel, Field
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 
-# Import your custom engine logic modules
-from local_analysis import assess_url_risk
-from interfaces import (check_google_safe_browsing, check_virustotal, run_url_sandbox)
-from emailchecker import TextPhishingAssessment, check_email
+# Import your custom engine logic modules from the package
+from .core.local_analysis import assess_url_risk
+from .interfaces.phishing_dbs import check_google_safe_browsing, check_virustotal
+from .interfaces.sandbox import run_url_sandbox
+from .core.emailchecker import TextPhishingAssessment, check_email
 
 # Load environment keys
 load_dotenv()
@@ -155,8 +156,12 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         cache_key = f"url_scan:{phish.url.strip().lower()}"
 
         # 2. CHECK THE CACHE ENGINE
-        backend = FastAPICache.get_backend()
-        cached_value = await backend.get(cache_key)
+        try:
+            backend = FastAPICache.get_backend()
+        except AssertionError:
+            backend = None
+
+        cached_value = await backend.get(cache_key) if backend else None
 
 
         if cached_value is not None:
@@ -250,3 +255,4 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
                 # Otherwise (Suspicious/Malicious/Error), keep it cached for 10 hours
                 await backend.set(cache_key, serialized_data, expire=36000)
     return final_response
+

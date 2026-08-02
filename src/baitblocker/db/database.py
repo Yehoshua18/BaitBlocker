@@ -99,8 +99,6 @@ def add_bulk_keywords(keywords_list: List[Tuple[str, str, float]]) -> int:
         VALUES (?, ?, ?)
     """, cleaned_data)
 
-    # SQLite doesn't natively return affected row counts easily for execuitemany,
-    # so we commit and check total changes if needed, or simply return success tracking.
     conn.commit()
     conn.close()
     return len(cleaned_data)
@@ -120,3 +118,4 @@ def import_keywords_from_file(filepath: str, category: str, default_weight: floa
     if keywords_to_import:
         added_count = add_bulk_keywords(keywords_to_import)
         print(f"Successfully processed {added_count} records from {filepath}.")
+

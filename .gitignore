@@ -3,3 +3,27 @@ __pycache__/
 .pytest_cache/
 .env
 .idea/
+# Database and data
+threat_intel.db
+data/
+
+# Streamlit
+.streamlit/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Playwright
+.playwright/
+
+# Logs
+*.log
+
+# Test / coverage artifacts
+.coverage
+htmlcov/
+coverage.xml
+*.pytest_cache/
+

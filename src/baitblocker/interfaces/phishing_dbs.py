@@ -1,6 +1,7 @@
 import base64
 import httpx
 
+
 async def check_google_safe_browsing(url: str, key: str):
     api_url = f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={key}"
     payload = {
@@ -17,6 +18,7 @@ async def check_google_safe_browsing(url: str, key: str):
         data = response.json()
         # If 'matches' exists in the response, the URL is malicious
         return "matches" in data
+
 
 async def check_virustotal(url: str, key: str):
     # 1. Clean the string and encode to standard Base64
@@ -63,3 +65,4 @@ async def check_virustotal(url: str, key: str):
             "suspicious": suspicious_count,
             "total_risk": malicious_count + suspicious_count
         }
+

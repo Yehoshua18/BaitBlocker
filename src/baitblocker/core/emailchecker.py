@@ -114,3 +114,4 @@ async def check_email(email: str) -> Optional[TextPhishingAssessment]:
         summary_analysis="The AI analysis could not execute. Check server logs and API quotas.",
         recommended_action="Flag/Warn User"
     )
+

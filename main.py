@@ -10,7 +10,7 @@ def start_backend():
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
     uvicorn.run(
-        "backendAPI:app",
+        "baitblocker.backend_api:app",
         host="0.0.0.0",
         port=8000,
         loop="asyncio",
@@ -18,8 +18,10 @@ def start_backend():
     )
 
 def start_frontend():
-    # Programmatically run: streamlit run streamlit_ui.py
-    sys.argv = ["streamlit", "run", "streamlit_ui.py"]
+    # Programmatically run Streamlit from the package copy under src/
+    # Use an explicit path so streamlit can find the file after we moved sources
+    streamlit_path = "src\\baitblocker\\ui\\streamlit_ui.py"
+    sys.argv = ["streamlit", "run", streamlit_path]
     sys.exit(stcli.main())
 
 if __name__ == "__main__":

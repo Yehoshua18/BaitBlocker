@@ -166,3 +166,4 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
             except requests.exceptions.ConnectionError:
                 st.error(
                     "🔴 Could not connect to the FastAPI backend. Make sure your Uvicorn server is running on localhost:8000!")
+

@@ -1,5 +1,5 @@
 import re
-from db.database import get_all_keywords, init_db, get_by_type
+from .database import get_all_keywords, init_db, get_by_type
 
 
 class KeywordScanner:
@@ -64,3 +64,4 @@ class KeywordScanner:
             "matches": found_keywords_by_type,
             "verdict": "SUSPICIOUS" if total_score >= 0.5 else "CLEAN"
         }
+

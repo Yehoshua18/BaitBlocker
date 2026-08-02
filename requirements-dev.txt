@@ -1,0 +1,29 @@
+# Development and Testing Dependencies for BaitBlocker
+
+# Testing Framework
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+pytest-timeout>=2.1.0
+
+# FastAPI Testing
+httpx>=0.24.0
+starlette>=0.26.0
+
+# Code Quality
+black>=23.0.0
+isort>=5.12.0
+flake8>=6.0.0
+pylint>=2.16.0
+mypy>=1.0.0
+
+# Type Checking
+types-python-dotenv>=0.1.0
+
+# Mocking and Fixtures
+pytest-mock>=3.10.0
+responses>=0.22.0
+
+# Utilities
+python-dotenv>=1.0.0
+
