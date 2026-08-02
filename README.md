@@ -103,6 +103,8 @@ A full report and explanation can be found in the Report.html file.
 | **Database/Cache** | SQLite3 / FastAPI Cache | Persistent keyword storage & temporary TTL cache |
 | **Automation Sandbox**| Playwright | Headless browser rendering for visual auditing |
 
+## Testing
+Details on testing and test coverage can be found in [TESTING.md](./TESTING.md).
 
 ## Roadmap / Future Plans
 - **Incorporating ML:** By incorporating ML, the false positive rate can be lowered while also cutting down on AI usage for email analysis.
