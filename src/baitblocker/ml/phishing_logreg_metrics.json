@@ -1,0 +1,10 @@
+{
+  "accuracy": 0.8455,
+  "precision": 0.830622009569378,
+  "recall": 0.868,
+  "f1": 0.8488997555012225,
+  "roc_auc": 0.9209,
+  "train_size": 8000,
+  "test_size": 2000,
+  "feature_count": 25
+}
