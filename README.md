@@ -1,10 +1,11 @@
 # BaitBlocker
 
-Real-time phishing and social engineering defense powered by local analysis, external threat intelligence, and a Streamlit dashboard.
+Real-time phishing and social engineering defense powered by local analysis, ML prediction, external threat intelligence, and a Streamlit dashboard.
 
 ## Key Features
 
 - **Local and external URL analysis** - Scans suspicious links using lexical, database, and third-party signals
+- **ML prediction** - Uses a trained model to classify URLs as malicious or benign
 - **Social engineering detection** - Flags urgent, deceptive, or impersonation-style content in URLs and emails
 - **Interactive UI** - Streamlit dashboard for quick manual analysis
 - **Sandbox screenshot capture** - Optional Playwright-based visual inspection of suspicious targets
@@ -58,6 +59,30 @@ The application uses a `src/` layout with the canonical package under `src/baitb
 
 For detailed setup, troubleshooting, and configuration instructions, see [SETUP.md](./SETUP.md).
 
+### Train / Retrain the ML Model
+
+To train the logistic regression model from `src/baitblocker/ml/PhishingData.csv`:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH = "$PWD\src"
+python -m baitblocker.ml.model_training train
+```
+
+Expected artifacts after training:
+- `src/baitblocker/ml/phishing_logreg_model.joblib`
+- `src/baitblocker/ml/phishing_logreg_metrics.json`
+
+Quick inference check after training:
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -m baitblocker.ml.model_training predict "https://youtube.com"
+python -m baitblocker.ml.model_training predict "http://192.168.1.5/login/verify"
+```
+
+Detailed training/retraining workflow (including versioned model outputs) is in [SETUP.md - Train / Retrain the ML Model](./SETUP.md#train--retrain-the-ml-model).
+
 ### Using Start Scripts (Recommended)
 
 Start the backend in one terminal:
@@ -89,25 +114,25 @@ streamlit run src\baitblocker\ui\streamlit_ui.py
 ```
 
 ## Architecture
-<img width="945" height="518" alt="image" src="https://github.com/user-attachments/assets/edb07325-6f63-4a5d-967b-0384ce8ab381" />
+![img_1.png](img_1.png)
 
 All analysis layers run asynchronously via **FastAPI** to optimize runtime processing. If a cache hit occurs in Layer 1, the engine short-circuits the remaining pipeline to serve immediate results for the URL while email analysis still occurs.
 A full report and explanation can be found in the Report.html file.
 
 ## Tech Stack
 
-| Component | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Backend Framework** | Python / FastAPI | Async request handling & input validation |
-| **Frontend UI** | Streamlit | Minimalist, interactive user dashboard |
+| Component | Technology | Purpose                                          |
+| :--- | :--- |:-------------------------------------------------|
+| **Backend Framework** | Python / FastAPI | Async request handling & input validation        |
+| **ML Model** | Scikit-learn | URL classification                               |
+| **Frontend UI** | Streamlit | Minimalist, interactive user dashboard           |
 | **Database/Cache** | SQLite3 / FastAPI Cache | Persistent keyword storage & temporary TTL cache |
-| **Automation Sandbox**| Playwright | Headless browser rendering for visual auditing |
+| **Automation Sandbox**| Playwright | Headless browser rendering for visual auditing   |
 
 ## Testing
 Details on testing and test coverage can be found in [TESTING.md](./TESTING.md).
 
 ## Roadmap / Future Plans
-- **Incorporating ML:** By incorporating ML, the false positive rate can be lowered while also cutting down on AI usage for email analysis.
 - **Payload Extraction:** Enhance the Playwright sandbox layer to intercept and log forced background malware downloads automatically
 
 ## Author

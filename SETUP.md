@@ -132,6 +132,47 @@ GROK_KEY=your_groq_llm_api_key_here
 
 ---
 
+## Train / Retrain the ML Model
+
+Use these steps any time you want to refresh the logistic regression model used for URL phishing prediction.
+
+### Train with default paths
+
+This reads `src/baitblocker/ml/PhishingData.csv` and writes model artifacts back into `src/baitblocker/ml/`.
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+$env:PYTHONPATH = "$PWD\src"
+python -m baitblocker.ml.model_training train
+```
+
+Expected output artifacts:
+- `src/baitblocker/ml/phishing_logreg_model.joblib`
+- `src/baitblocker/ml/phishing_logreg_metrics.json`
+
+### Quick prediction sanity check
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -m baitblocker.ml.model_training predict "https://youtube.com"
+python -m baitblocker.ml.model_training predict "http://192.168.1.5/login/verify"
+```
+
+### Retrain and version outputs (optional)
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -c "from pathlib import Path; from baitblocker.ml.model_training import train_logistic_regression; r=train_logistic_regression(model_path=Path('src/baitblocker/ml/phishing_logreg_model_v2.joblib'), metrics_path=Path('src/baitblocker/ml/phishing_logreg_metrics_v2.json')); print(r)"
+```
+
+### Verify metrics file
+
+```powershell
+Get-Content .\src\baitblocker\ml\phishing_logreg_metrics.json
+```
+
+---
+
 ## Testing the Backend
 
 ### Health Check

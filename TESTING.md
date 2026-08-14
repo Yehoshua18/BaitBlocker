@@ -2,13 +2,14 @@
 
 ## Overview
 
-The BaitBlocker project includes a comprehensive test suite with **39+ automated tests** covering:
+The BaitBlocker project includes a comprehensive test suite with **100 automated tests** covering:
 - Database operations (CRUD, filtering, keywords)
 - Keyword scanning and pattern matching
 - URL analysis (entropy, mutations, special characters, length)
 - API endpoints (health checks, analysis requests)
+- ML feature extraction, model training, and prediction behavior
 
-**Test Status**: ✅ **39 PASSED** (as of last run)
+**Test Status**: ✅ **100 PASSED** (as of last run)
 
 ---
 
@@ -74,6 +75,7 @@ tests/
 ├── test_db_matcher.py            # 9 tests for keyword scanner
 ├── test_core_local_analysis.py   # 22 tests for URL analysis
 └── test_api_backend.py           # 14 tests for API endpoints
+└── test_ml_model_training.py      # 46 tests for ML pipeline
 ```
 
 ### Test Categories
@@ -148,6 +150,33 @@ def test_analyze_with_url_only(self, client):
     payload = {"url": "https://example.com", "run_sandbox": False}
     response = client.post("/analyze", json=payload)
     assert response.status_code == 200
+```
+
+#### 5. ML Pipeline Tests (`test_ml_model_training.py`)
+Tests for `src/baitblocker/ml/features.py` and `src/baitblocker/ml/model_training.py`:
+- ✅ Feature extraction correctness for lexical URL signals
+- ✅ Feature schema integrity (`FEATURE_COLUMNS` completeness + float typing)
+- ✅ URL normalization behavior (scheme-less URLs)
+- ✅ Training artifact creation (`.joblib`) and metrics JSON output
+- ✅ Metrics validity and split accounting (`train_size + test_size == total`)
+- ✅ Guard rails for bad datasets (missing required columns raises `ValueError`)
+- ✅ Prediction contract (`is_phishing`, `phishing_probability`, `safe_probability`)
+- ✅ Probability invariants (`0 <= p <= 1`, `phishing + safe = 1`)
+- ✅ Feature contribution payload shape (`feature_contributions` contains all features)
+- ✅ Threshold behavior (`phishing_threshold` override and default behavior)
+
+**Why these tests were added**:
+- The ML module became part of the production `/analyze` flow, so it now needs strict contract tests.
+- False positives were investigated recently; these tests lock in core behaviors to prevent regressions.
+- The UI now renders ML probability/contribution graphs, so payload shape and numeric guarantees are required.
+
+**Example**:
+```python
+def test_probabilities_sum_to_one(self, trained_model):
+    _, model_path = trained_model
+    result = predict_url("http://example.com", model_path=model_path)
+    total = round(result["phishing_probability"] + result["safe_probability"], 4)
+    assert total == 1.0
 ```
 
 ---
@@ -317,6 +346,7 @@ Current coverage:
 - **Matcher layer**: 9 tests (all scanning methods)
 - **Analysis engine**: 22 tests (URL analysis pipeline)
 - **API endpoints**: 14 tests (request/response validation)
+- **ML pipeline**: 46 tests (features + training + prediction + output contract)
 
 Target: **>80% code coverage** across all modules
 
@@ -383,7 +413,7 @@ db_module.DB_NAME = ":memory:"
 
 ---
 
-**Last Updated**: August 2, 2026  
+**Last Updated**: August 14, 2026  
 **Test Suite Version**: 1.0  
 **Status**: ✅ Production Ready
 
