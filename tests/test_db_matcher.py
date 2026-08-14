@@ -1,7 +1,7 @@
 """Unit tests for keyword matcher module."""
 
 import pytest
-from baitblocker.db.matcher import KeywordScanner
+from src.baitblocker.db.matcher import KeywordScanner
 
 
 class TestKeywordScanner:

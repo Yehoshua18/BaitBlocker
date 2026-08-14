@@ -1,5 +1,6 @@
 import base64
 
+import plotly.graph_objects as go
 import streamlit as st
 import requests
 
@@ -91,16 +92,20 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                     st.markdown("---")
 
                     # DISPLAY RESULTS IN TABS
-                    tab1, tab2, tab3, tab4 = st.tabs(
-                        ["📊 Executive Summary", "🧠 Local Logic Analytics", "🌐 External Threat Intelligence", "🖼️ Live Sandbox View"])
+                    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+                        ["📊 Executive Summary","🤖 Machine Learning Prediction", "🧠 Local Logic Analytics", "🌐 External Threat Intelligence", "🖼️ Live Sandbox View"])
 
                     with tab1:
                         st.subheader("Quick Metrics Overview")
-                        m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+                        m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
 
                         lex_data = local_rep.get("url_lexical_analysis") or {}
-                        risk_score = float(lex_data.get("risk_score", 0.0))
+                        ml_data = local_rep.get("ml_report") or {}
+                        lex_risk = float(lex_data.get("risk_score", 0.0))
+                        ml_risk = float(ml_data.get("phishing_probability", 0.0))
+                        risk_score = (0.3 * lex_risk) + (0.7 * ml_risk)
                         verdict = lex_data.get("verdict", "N/A")
+                        prediction = ml_data.get("is_phishing", "N/A")
 
                         vt_flagged = ext_rep.get("engines_flagged_on_vt", 0)
                         google_flagged = ext_rep.get("google_safe_browsing", "N/A")
@@ -110,20 +115,133 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                         email_risk = email_verdict.get("risk_level", "N/A")
 
                         with m_col1:
+                            st.metric(label="URL Risk",
+                                      value=f"{risk_score:.2f}")
+                            st.metric(label="Email Risk",
+                                      value=f"{email_prob:.2f}")
                             st.metric(label="Total Phishing Score",
                                       value=f"{risk_score + email_prob:.2f}")
                         with m_col2:
-                            st.metric(label="Lexical Verdict", value=verdict, delta=f"Risk: {risk_score}")
+                            st.metric(label="ML Prediction", value=prediction, delta=f"Probability: {ml_risk}")
                         with m_col3:
+                            st.metric(label="Lexical Verdict", value=verdict, delta=f"Risk: {lex_risk}")
+                        with m_col4:
                             st.metric(label="VirusTotal Flags", value=f"{vt_flagged} Engines",
                                       delta="Status: " + str(ext_rep.get("risk_level_from_virus_total", "N/A")))
-                        with m_col4:
-                            st.metric(label="Google Safe Browsing", value=str(google_flagged))
                         with m_col5:
+                            st.metric(label="Google Safe Browsing", value=str(google_flagged))
+                        with m_col6:
                             st.metric(label="Email Verdict", value=email_risk,
                                       delta=f"Score: {email_prob}")
 
                     with tab2:
+                        st.subheader("Machine Learning Report")
+
+                        if not ml_data:
+                            st.info("No ML prediction available for this input.")
+                        else:
+                            phishing_prob = float(ml_data.get("phishing_probability", 0.0))
+                            safe_prob = float(ml_data.get("safe_probability", 1.0 - phishing_prob))
+                            is_phishing_ml = ml_data.get("is_phishing", False)
+                            threshold = 0.6
+
+                            verdict_color = "#e74c3c" if is_phishing_ml else "#2ecc71"
+                            verdict_label = "⚠️ PHISHING" if is_phishing_ml else "✅ SAFE"
+
+                            st.markdown(
+                                f"<h3 style='color:{verdict_color}; text-align:center'>{verdict_label}</h3>",
+                                unsafe_allow_html=True
+                            )
+
+                            # ── GAUGE CHART ─────────────────────────────────────────────
+                            gauge_fig = go.Figure(go.Indicator(
+                                mode="gauge+number+delta",
+                                value=round(phishing_prob * 100, 1),
+                                delta={
+                                    "reference": threshold * 100,
+                                    "increasing": {"color": "#e74c3c"},
+                                    "decreasing": {"color": "#2ecc71"},
+                                    "suffix": "% vs threshold",
+                                },
+                                number={"suffix": "%", "font": {"size": 36}},
+                                title={"text": "Phishing Probability", "font": {"size": 18}},
+                                gauge={
+                                    "axis": {"range": [0, 100], "ticksuffix": "%"},
+                                    "bar": {"color": verdict_color, "thickness": 0.3},
+                                    "steps": [
+                                        {"range": [0, 40], "color": "#d5f5e3"},
+                                        {"range": [40, 60], "color": "#fef9e7"},
+                                        {"range": [60, 100], "color": "#fadbd8"},
+                                    ],
+                                    "threshold": {
+                                        "line": {"color": "#2c3e50", "width": 3},
+                                        "thickness": 0.85,
+                                        "value": threshold * 100,
+                                    },
+                                },
+                            ))
+                            gauge_fig.update_layout(
+                                height=300,
+                                margin=dict(t=60, b=20, l=40, r=40),
+                                paper_bgcolor="rgba(0,0,0,0)",
+                            )
+                            st.plotly_chart(gauge_fig, use_container_width=True)
+
+                            st.caption(
+                                f"Decision threshold: **{int(threshold * 100)}%** — "
+                                f"phishing probability: **{phishing_prob:.1%}** | "
+                                f"safe probability: **{safe_prob:.1%}**"
+                            )
+
+                            # ── FEATURE CONTRIBUTION BAR CHART ──────────────────────────
+                            contributions = ml_data.get("feature_contributions") or {}
+                            if contributions:
+                                st.markdown("---")
+                                st.markdown("#### Feature Contributions to This Prediction")
+                                st.caption(
+                                    "Bars to the **right** (red) push toward phishing. "
+                                    "Bars to the **left** (green) push toward safe. "
+                                    "Only non-zero contributions are shown."
+                                )
+
+                                # Filter to only non-zero contributions and sort by absolute magnitude
+                                active = {k: v for k, v in contributions.items() if abs(v) > 0.001}
+                                if active:
+                                    sorted_items = sorted(active.items(), key=lambda x: x[1])
+                                    feat_names = [item[0] for item in sorted_items]
+                                    feat_vals = [item[1] for item in sorted_items]
+                                    bar_colors = [
+                                        "#e74c3c" if v > 0 else "#2ecc71"
+                                        for v in feat_vals
+                                    ]
+
+                                    contrib_fig = go.Figure(go.Bar(
+                                        x=feat_vals,
+                                        y=feat_names,
+                                        orientation="h",
+                                        marker_color=bar_colors,
+                                        text=[f"{v:+.3f}" for v in feat_vals],
+                                        textposition="outside",
+                                        hovertemplate="%{y}: %{x:+.4f}<extra></extra>",
+                                    ))
+                                    contrib_fig.update_layout(
+                                        xaxis_title="Contribution (scaled feature × coefficient)",
+                                        yaxis_title="",
+                                        height=max(300, 28 * len(feat_names)),
+                                        margin=dict(l=160, r=60, t=20, b=40),
+                                        paper_bgcolor="rgba(0,0,0,0)",
+                                        plot_bgcolor="rgba(0,0,0,0)",
+                                        xaxis=dict(zeroline=True, zerolinecolor="#888", gridcolor="#eee"),
+                                        yaxis=dict(gridcolor="#eee"),
+                                    )
+                                    st.plotly_chart(contrib_fig, use_container_width=True)
+                                else:
+                                    st.info("All feature contributions are near zero for this URL (it looks structurally unremarkable).")
+                            else:
+                                st.write(ml_data)
+
+
+                    with tab3:
                         st.subheader("Internal Rules Engine Output")
                         if local_rep.get("url_lexical_analysis"):
                             st.markdown("**URL Flagged Reasons:**")
@@ -136,11 +254,11 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                         else:
                             st.info("No email text was processed during this run.")
 
-                    with tab3:
+                    with tab4:
                         st.subheader("Third-Party Intelligence Reputations")
                         st.json(ext_rep)
 
-                    with tab4:
+                    with tab5:
                         st.subheader("Isolated Visual Replication Profile")
 
                         sandbox_status = sandbox.get("sandbox_status", "N/A")

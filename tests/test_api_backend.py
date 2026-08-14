@@ -2,7 +2,7 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from baitblocker.backend_api import app
+from src.baitblocker.backend_api import app
 
 
 @pytest.fixture
@@ -168,6 +168,24 @@ class TestAnalyzeEndpoint:
         
         assert "Skipped" in sandbox["sandbox_status"] or sandbox["sandbox_status"] == "N/A"
         assert sandbox["screenshot_data"] is None
+
+    def test_analyze_cache_hit_restores_ml_report(self, client):
+        """Test that repeated analyze requests preserve ml_report via cache rehydration."""
+        payload = {
+            "url": "https://cache-restore-check.example",
+            "email_text": None,
+            "run_sandbox": False
+        }
+
+        first = client.post("/analyze", json=payload)
+        assert first.status_code == 200
+        first_data = first.json()
+        assert first_data["local_report"]["ml_report"] is not None
+
+        second = client.post("/analyze", json=payload)
+        assert second.status_code == 200
+        second_data = second.json()
+        assert second_data["local_report"]["ml_report"] is not None
 
 
 class TestSecurityScanEndpoint:

@@ -1,7 +1,7 @@
 """Unit tests for database module."""
 
 import pytest
-from baitblocker.db.database import (
+from src.baitblocker.db.database import (
     init_db,
     get_all_keywords,
     get_by_type,

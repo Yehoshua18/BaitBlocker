@@ -15,4 +15,4 @@ python -m baitblocker.ml.model_training predict "http://192.168.0.10/verify-acco
 - The trained model is saved to `phishing_logreg_model.joblib` by default.
 - Evaluation metrics are written to `phishing_logreg_metrics.json` by default.
 - The dataset was taken from [Kaggle](https://www.kaggle.com/datasets/shashwatwork/phishing-dataset-for-machine-learning/data) and contains 10,000 samples (5,000 phishing and 5,000 safe) with 40 features each.
-
+- The threshold for classifying a URL as phishing can be adjusted in the `predict` function. By default, it is set to 0.6 to avoid false positives.

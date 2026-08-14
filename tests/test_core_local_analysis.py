@@ -2,7 +2,7 @@
 
 import pytest
 import asyncio
-from baitblocker.core.local_analysis import (
+from src.baitblocker.core.local_analysis import (
     assess_url_risk,
     calculate_entropy,
     detect_mutations,

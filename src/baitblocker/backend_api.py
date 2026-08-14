@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -15,6 +15,7 @@ from .core.local_analysis import assess_url_risk
 from .interfaces.phishing_dbs import check_google_safe_browsing, check_virustotal
 from .interfaces.sandbox import run_url_sandbox
 from .core.emailchecker import TextPhishingAssessment, check_email
+from .ml import predict_url
 
 # Load environment keys
 load_dotenv()
@@ -68,8 +69,17 @@ class UrlLexicalAnalysis(BaseModel):
     risk_score: float
     reasons: List[str]
 
+class MLReport(BaseModel):
+    url: str
+    is_phishing: bool
+    phishing_probability: float
+    safe_probability: Optional[float] = None
+    features: Dict[str, float]
+    feature_contributions: Optional[Dict[str, float]] = None
+
 class LocalReport(BaseModel):
     url_lexical_analysis: Optional[UrlLexicalAnalysis] = None
+    ml_report: Optional[MLReport] = None
     email_text_analysis: Optional[TextPhishingAssessment] = None
 
 class ExternalReport(BaseModel):
@@ -134,6 +144,7 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
         raise HTTPException(status_code=400, detail="Must provide a URL or email text.")
 
     url_lexical_data = None
+    ml_report = None
     email_analysis_data = None
     sandbox_report_obj = SandboxReport(
         sandbox_status="N/A",
@@ -173,6 +184,8 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
 
             if "url_lexical_analysis" in cached_data and cached_data["url_lexical_analysis"]:
                 url_lexical_data = UrlLexicalAnalysis(**cached_data["url_lexical_analysis"])
+            if "ml_report" in cached_data and cached_data["ml_report"]:
+                ml_report = MLReport(**cached_data["ml_report"])
             if "external_report" in cached_data and cached_data["external_report"]:
                 external_report_obj = ExternalReport(**cached_data["external_report"])
             if "sandbox" in cached_data and cached_data["sandbox"]:
@@ -193,6 +206,18 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
                 sandbox_report_obj.sandbox_status = "Skipped (User Opt-Out)"
                 sandbox_report_obj.final_destination = phish.url
                 sandbox_report_obj.screenshot_data = None
+
+            # Predict URL Phishing Probability using the ML model
+            try:
+                ml_result = predict_url(phish.url)
+                ml_report = MLReport(**ml_result)
+            except Exception as e:
+                ml_report = MLReport(
+                    url=phish.url,
+                    is_phishing=False,
+                    phishing_probability=0.5,
+                    features={str(e) : 1.0 }
+                )
 
             # Process URL Lexical Analysis
             try:
@@ -225,6 +250,7 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
     # Assemble local parameters
     local_report_obj = LocalReport(
         url_lexical_analysis=url_lexical_data,
+        ml_report=ml_report if phish.url else None,
         email_text_analysis=email_analysis_data
     )
 
@@ -241,6 +267,7 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
             # Package and serialize ONLY the URL properties
             url_cache_payload = {
                 "url_lexical_analysis": url_lexical_data.model_dump(),
+                "ml_report": ml_report.model_dump(),
                 "external_report": external_report_obj.model_dump(),
                 "sandbox": sandbox_report_obj.model_dump()
             }
@@ -255,4 +282,3 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
                 # Otherwise (Suspicious/Malicious/Error), keep it cached for 10 hours
                 await backend.set(cache_key, serialized_data, expire=36000)
     return final_response
-

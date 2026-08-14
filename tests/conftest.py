@@ -2,8 +2,8 @@
 
 import pytest
 
-from baitblocker.db.database import init_db, add_bulk_keywords
-from baitblocker.db.matcher import KeywordScanner
+from src.baitblocker.db.database import init_db, add_bulk_keywords
+from src.baitblocker.db.matcher import KeywordScanner
 
 
 @pytest.fixture(scope="session")
@@ -12,7 +12,7 @@ def test_db(tmp_path_factory):
     db_path = tmp_path_factory.mktemp("data") / "test_threat_intel.db"
 
     # Override DB_NAME for tests
-    import baitblocker.db.database as db_module
+    import src.baitblocker.db.database as db_module
     original_db = db_module.DB_NAME
     db_module.DB_NAME = str(db_path)
 
