@@ -149,7 +149,7 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
     sandbox_report_obj = SandboxReport(
         sandbox_status="N/A",
         final_destination="N/A",
-        screenshot_data="N/A"
+        screenshot_data=None
     )
 
     # Process External Threats Engine
@@ -263,7 +263,7 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
 
     # 3. COMMIT TO CACHE MEMORY (Only if a cache_key and backend were initialized)
     if cache_key and backend and not cache_hit:
-        if url_lexical_data:
+        if phish.url and url_lexical_data:
             # Package and serialize ONLY the URL properties
             url_cache_payload = {
                 "url_lexical_analysis": url_lexical_data.model_dump(),
@@ -281,4 +281,12 @@ async def analyze_input(phish: AnalysisRequest, response: Response):
             else:
                 # Otherwise (Suspicious/Malicious/Error), keep it cached for 10 hours
                 await backend.set(cache_key, serialized_data, expire=36000)
+
+    # Normalize cache status semantics for the UI.
+    if phish.url:
+        if "X-Cache" not in response.headers:
+            response.headers["X-Cache"] = "HIT" if cache_hit else "MISS"
+    else:
+        response.headers["X-Cache"] = "BYPASS"
+
     return final_response

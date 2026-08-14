@@ -43,7 +43,7 @@ VT_API_KEY=your_virustotal_api_key_here
 GOOGLE_API_KEY=your_google_safe_browsing_api_key_here
 
 # LLM Configuration (for email analysis)
-GROK_KEY=your_groq_llm_api_key_here
+GROQ_KEY=your_groq_llm_api_key_here
 ```
 
 ## How to Run

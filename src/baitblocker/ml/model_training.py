@@ -18,7 +18,7 @@ LABEL_COLUMN = "CLASS_LABEL"
 DEFAULT_DATASET_PATH = Path(__file__).with_name("PhishingData.csv")
 DEFAULT_MODEL_PATH = Path(__file__).with_name("phishing_logreg_model.joblib")
 DEFAULT_METRICS_PATH = Path(__file__).with_name("phishing_logreg_metrics.json")
-DEFAULT_PHISHING_THRESHOLD = 0.6
+DEFAULT_PHISHING_THRESHOLD = 0.7
 
 
 def _normalize_labels(y_raw: pd.Series) -> pd.Series:

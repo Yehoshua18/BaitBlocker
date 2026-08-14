@@ -9,10 +9,28 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-AI_KEY = os.getenv("GROK_KEY")
+DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 
 MAX_EMAIL_CHARS = 10000  # Strict maximum ceiling (~2000-2500 tokens)
 
+
+def _error_assessment(flag: str, summary: str) -> "TextPhishingAssessment":
+    return TextPhishingAssessment(
+        phishing_probability=0.0,
+        risk_level="High",
+        red_flags=[flag],
+        summary_analysis=summary,
+        recommended_action="Flag/Warn User",
+    )
+
+
+def _strip_json_fence(raw: str) -> str:
+    cleaned = raw.strip()
+    if cleaned.startswith("```") and cleaned.endswith("```"):
+        cleaned = cleaned[3:-3].strip()
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    return cleaned
 
 class TextPhishingAssessment(BaseModel):
     phishing_probability: float = Field(
@@ -40,7 +58,14 @@ class TextPhishingAssessment(BaseModel):
 async def check_email(email: str) -> Optional[TextPhishingAssessment]:
 
     # HARD CEILING GUARD (Prevent Memory/String DoS)
-    if not isinstance(email, str) or len(email) > MAX_EMAIL_CHARS:
+    if not isinstance(email, str):
+        return _error_assessment("Invalid Input Type", "Email payload must be a string.")
+
+    email = email.strip()
+    if not email:
+        return _error_assessment("Empty Email Input", "No email content was provided for analysis.")
+
+    if len(email) > MAX_EMAIL_CHARS:
         return TextPhishingAssessment(
             phishing_probability=1.0,
             risk_level="High",
@@ -49,9 +74,19 @@ async def check_email(email: str) -> Optional[TextPhishingAssessment]:
             recommended_action="Quarantine"
         )
 
+    # Backward compatibility: support both GROQ_KEY and historical GROK_KEY names.
+    ai_key = os.getenv("GROQ_KEY") or os.getenv("GROK_KEY")
+    if not ai_key:
+        return _error_assessment(
+            "Missing API Key",
+            "Set GROQ_KEY (or GROK_KEY) in your .env and restart the backend.",
+        )
+
+    model_name = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+
     client = AsyncOpenAI(
         base_url="https://api.groq.com/openai/v1",
-        api_key=AI_KEY
+        api_key=ai_key
     )
     system_prompt = (
         "You are an expert Cyber Security Operations Center (SOC) analyst specializing in email security. "
@@ -84,13 +119,13 @@ async def check_email(email: str) -> Optional[TextPhishingAssessment]:
 
         response = await asyncio.wait_for(
             client.chat.completions.create(
-                model="qwen/qwen3-32b", # Free use Grok model
+                model=model_name,
                 messages=messages_payload,
                 response_format=cast(Any,{"type": "json_object"}),
                 temperature=0.6,
                 max_tokens=800 # Cap amount of tokens to prevent token inflation
             ),
-            timeout=10.0
+            timeout=20.0
         )
 
 
@@ -100,18 +135,15 @@ async def check_email(email: str) -> Optional[TextPhishingAssessment]:
             raise ValueError("Empty response received from LLM")
 
         # 2. Parse string into standard dictionary
-        parsed_json = json.loads(raw_content)
+        parsed_json = json.loads(_strip_json_fence(raw_content))
 
         # 3. Explicitly construct and return the Pydantic validator model - to handle schema mismatches
         return TextPhishingAssessment.model_validate(parsed_json)
 
     except Exception as e:
         print(f"Error during API call or parsing: {e}")
-        return TextPhishingAssessment(
-        phishing_probability=0.0,
-        risk_level="High",
-        red_flags=["API Error Encountered"],
-        summary_analysis="The AI analysis could not execute. Check server logs and API quotas.",
-        recommended_action="Flag/Warn User"
-    )
+        return _error_assessment(
+            f"API Error: {type(e).__name__}",
+            f"The AI analysis could not execute: {str(e)[:180]}",
+        )
 

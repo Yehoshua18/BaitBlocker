@@ -1,4 +1,5 @@
 import base64
+import binascii
 
 import plotly.graph_objects as go
 import streamlit as st
@@ -57,7 +58,7 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
 
         with st.spinner("Running core lexical and threat intelligence engines..."):  # type: ignore
             try:
-                is_cache_hit = False
+                cache_status = "UNKNOWN"
 
                 # Prepare the standardized POST payload
                 payload = {
@@ -73,9 +74,7 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                 if response.status_code == 200:
                     data = response.json()
 
-                    # Track cache hits using case-insensitive lowercase matching
-                    if "x-cache" not in response.headers:
-                        is_cache_hit = True
+                    cache_status = response.headers.get("X-Cache", response.headers.get("x-cache", "UNKNOWN")).upper()
 
                     local_rep = data.get("local_report", {}) or {}
                     ext_rep = data.get("external_report", {}) or {}
@@ -83,11 +82,15 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
 
                     st.success("Analysis Complete!")
 
-                    # Display explicit Cache Badge based on HTTP Headers
-                    if is_cache_hit:
+                    # Display explicit cache/bypass state from backend headers
+                    if cache_status == "HIT":
                         st.info("⚡ **Cache Hit!** Response served instantly from FastAPI RAM memory backend.")
-                    else:
+                    elif cache_status == "MISS":
                         st.warning("🐢 **Cache Miss / Deep Scan:** Core execution pipeline invoked.")
+                    elif cache_status == "BYPASS":
+                        st.info("ℹ️ **Cache Bypass:** No URL was provided, so URL cache was not used.")
+                    else:
+                        st.info("ℹ️ Cache status unavailable for this request.")
 
                     st.markdown("---")
 
@@ -100,12 +103,12 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
                         m_col1, m_col2, m_col3, m_col4, m_col5, m_col6 = st.columns(6)
 
                         lex_data = local_rep.get("url_lexical_analysis") or {}
-                        ml_data = local_rep.get("ml_report") or {}
+                        ml_data = local_rep.get("ml_report")
                         lex_risk = float(lex_data.get("risk_score", 0.0))
-                        ml_risk = float(ml_data.get("phishing_probability", 0.0))
+                        ml_risk = float(ml_data.get("phishing_probability", 0.0)) if ml_data else 0.0
                         risk_score = (0.3 * lex_risk) + (0.7 * ml_risk)
                         verdict = lex_data.get("verdict", "N/A")
-                        prediction = ml_data.get("is_phishing", "N/A")
+                        prediction = ml_data.get("is_phishing", "N/A") if ml_data else False
 
                         vt_flagged = ext_rep.get("engines_flagged_on_vt", 0)
                         google_flagged = ext_rep.get("google_safe_browsing", "N/A")
@@ -270,11 +273,14 @@ if st.button("🚀 Analyze Threats", use_container_width=True):
 
                         if screenshot_str:
                             # Decode the string bytes directly into a visual browser block on the fly
-                            img_bytes = base64.b64decode(screenshot_str)
-                            st.image(
-                                img_bytes,
-                                caption="Visual payload signature captured within safe, headless cloud instance.",
-                            )
+                            try:
+                                img_bytes = base64.b64decode(screenshot_str)
+                                st.image(
+                                    img_bytes,
+                                    caption="Visual payload signature captured within safe, headless cloud instance.",
+                                )
+                            except (binascii.Error, ValueError, TypeError):
+                                st.info("No visual artifact captured for this entry. Ensure the target URL is active.")
                         else:
                             st.info("No visual artifact captured for this entry. Ensure the target URL is active.")
 

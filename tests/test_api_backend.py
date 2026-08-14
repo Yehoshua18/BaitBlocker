@@ -61,12 +61,29 @@ class TestAnalyzeEndpoint:
         response = client.post("/analyze", json=payload)
         
         assert response.status_code == 200
+        assert response.headers.get("x-cache") == "BYPASS"
         data = response.json()
         
         assert data["local_report"]["url_lexical_analysis"] is None
         # Email analysis depends on API key availability
         if data["local_report"]["email_text_analysis"]:
             assert "phishing_probability" in data["local_report"]["email_text_analysis"]
+
+    def test_analyze_cache_header_for_url_requests(self, client):
+        """Test URL analyses expose an explicit cache status header."""
+        payload = {
+            "url": "https://cache-status-check.example",
+            "email_text": None,
+            "run_sandbox": False,
+        }
+
+        first = client.post("/analyze", json=payload)
+        assert first.status_code == 200
+        assert first.headers.get("x-cache") in {"MISS", "HIT"}
+
+        second = client.post("/analyze", json=payload)
+        assert second.status_code == 200
+        assert second.headers.get("x-cache") in {"MISS", "HIT"}
 
     def test_analyze_no_input(self, client):
         """Test that analyze rejects requests with no URL or email."""
