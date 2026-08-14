@@ -114,7 +114,8 @@ streamlit run src\baitblocker\ui\streamlit_ui.py
 ```
 
 ## Architecture
-![img_1.png](img_1.png)
+<img width="1024" height="656" alt="image" src="https://github.com/user-attachments/assets/af64fd5c-24dc-4f43-ab46-e19c20561e64" />
+
 
 All analysis layers run asynchronously via **FastAPI** to optimize runtime processing. If a cache hit occurs in Layer 1, the engine short-circuits the remaining pipeline to serve immediate results for the URL while email analysis still occurs.
 A full report and explanation can be found in the Report.html file.
